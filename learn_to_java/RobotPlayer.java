@@ -41,8 +41,8 @@ public strictfp class RobotPlayer {
 	 * Robot-specific variables should go into their own file
 	 * Everything we have here should be static
 	 */
-	static RobotController rc;
-	static Random rng;
+	public static RobotController rc;
+	public static Random rng;
 
 	/*
 	 * The entry-point of this Battlecode player

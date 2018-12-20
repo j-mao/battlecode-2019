@@ -41,7 +41,7 @@ public strictfp class SpecificRobotController extends RobotPlayer {
 	 * All robot-specific variables go here
 	 * Everything we have here should be static
 	 */
-	static int numberOfButterfliesThatIHaveSeen;
+	private static int numberOfButterfliesThatIHaveSeen;
 	// Note that ints are not objects and are auto-initialised to zero (not a null object)
 
 	/*
@@ -52,6 +52,9 @@ public strictfp class SpecificRobotController extends RobotPlayer {
 			// The "rc" used here is the "global" declared in RobotPlayer.java
 			// We can access this because of the class hierarchy
 			rc.admireAnotherButterfly();
+
+			// Now eat a random butterfly using our global rng and our function defined below
+			eatAButterfly(rng.nextInt());
 
 			numberOfButterfliesThatIHaveSeen++;
 		}
