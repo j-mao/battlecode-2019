@@ -50,7 +50,7 @@ public strictfp class RobotPlayer {
 	 * The actual function name will depend on the specs though
 	 */
 	public static void run(RobotController rc) throws Exception {
-		// Initialise our global variables because NullPointerException's suck
+		// Initialise our global variables because NullPointerExceptions suck
 		rng = new Random();
 		RobotPlayer.rc = rc;
 
