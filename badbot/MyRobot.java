@@ -28,7 +28,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public int[][] visibleRobotMap;
 
 	// Tools
-	public boolean[][] bfsVisited;
+	public int[][] bfsVisited;
+	public int bfsRunId;
 
 	// Storing locations of known structures
 	public final int NO_STRUCTURE = 0;
@@ -56,7 +57,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		if (!hasInitialised) {
 			BOARD_SIZE = map.length;
 			rng = new SimpleRandom();
-			bfsVisited = new boolean[BOARD_SIZE][BOARD_SIZE];
+			bfsVisited = new int[BOARD_SIZE][BOARD_SIZE];
 			if (me.unit == SPECS.CASTLE) {
 				mySpecificRobotController = new CastleController();
 			} else if (me.unit == SPECS.PILGRIM) {
@@ -113,11 +114,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	public void bfsResetVisited() {
-		for (int i = 0; i < BOARD_SIZE; i++) {
-			for (int j = 0; j < BOARD_SIZE; j++) {
-				bfsVisited[i][j] = false;
-			}
-		}
+		bfsRunId++;
 	}
 
 	public boolean isFriendlyStructure(Robot r) {
@@ -342,7 +339,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				Queue<Integer> qD = new LinkedList<>();
 				qX.add(x); qY.add(y); qD.add(-1);
 				bfsResetVisited();
-				bfsVisited[y][x] = true;
+				bfsVisited[y][x] = bfsRunId;
 
 				while (!qX.isEmpty()) {
 					int ux = qX.poll(), uy = qY.poll(), ud = qD.poll();
@@ -356,9 +353,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						continue;
 					}
 					for (int i = 0; i < 8; i++) {
-						if (inBounds(ux+dx[i], uy+dy[i]) && !bfsVisited[uy+dy[i]][ux+dx[i]]) {
+						if (inBounds(ux+dx[i], uy+dy[i]) && bfsVisited[uy+dy[i]][ux+dx[i]] != bfsRunId) {
 							if (map[uy+dy[i]][ux+dx[i]] == MAP_PASSABLE) {
-								bfsVisited[uy+dy[i]][ux+dx[i]] = true;
+								bfsVisited[uy+dy[i]][ux+dx[i]] = bfsRunId;
 								qX.add(ux+dx[i]);
 								qY.add(uy+dy[i]);
 								if (ud == -1) qD.add(i);
@@ -413,7 +410,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				Queue<Integer> qD = new LinkedList<>();
 				qX.add(x); qY.add(y); qD.add(-1);
 				bfsResetVisited();
-				bfsVisited[y][x] = true;
+				bfsVisited[y][x] = bfsRunId;
 
 				while (!qX.isEmpty()) {
 					int ux = qX.poll(), uy = qY.poll(), ud = qD.poll();
@@ -425,9 +422,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						continue;
 					}
 					for (int i = 0; i < 8; i++) {
-						if (inBounds(ux+dx[i], uy+dy[i]) && !bfsVisited[uy+dy[i]][ux+dx[i]]) {
+						if (inBounds(ux+dx[i], uy+dy[i]) && bfsVisited[uy+dy[i]][ux+dx[i]] != bfsRunId) {
 							if (map[uy+dy[i]][ux+dx[i]] == MAP_PASSABLE) {
-								bfsVisited[uy+dy[i]][ux+dx[i]] = true;
+								bfsVisited[uy+dy[i]][ux+dx[i]] = bfsRunId;
 								qX.add(ux+dx[i]);
 								qY.add(uy+dy[i]);
 								if (ud == -1) qD.add(i);
