@@ -23,12 +23,26 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public Robot[] visibleRobots;
 	public int[][] visibleRobotMap;
 
-	// Specific robot controller
+	// Secret private variables
 	private SpecificRobotController mySpecificRobotController;
+	private boolean hasInitialised;
 
 	public Action turn() {
 
-		BOARD_SIZE = map.length;
+		// Initialise ourselves for the first time
+		// We can't use the constructor because all of the inherited variables seem to be null
+		if (!hasInitialised) {
+			BOARD_SIZE = map.length;
+			if (me.unit == SPECS.CASTLE) {
+				mySpecificRobotController = new CastleController();
+			} else if (me.unit == SPECS.PILGRIM) {
+				mySpecificRobotController = new PilgrimController();
+			} else {
+				mySpecificRobotController = null;
+			}
+			hasInitialised = true;
+		}
+
 		// Initialise globals for this turn
 		visibleRobots = getVisibleRobots();
 		visibleRobotMap = getVisibleRobotMap();
@@ -45,20 +59,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		return myAction;
-	}
-
-	///////////////// Private Helper Functions /////////////////
-
-	// State initialising
-	public MyRobot() {
-		//rng = new Random();
-		if (me.unit == SPECS.CASTLE) {
-			mySpecificRobotController = new CastleController();
-		} else if (me.unit == SPECS.PILGRIM) {
-			mySpecificRobotController = new PilgrimController();
-		} else {
-			mySpecificRobotController = null;
-		}
 	}
 
 	//////////////// "Global" Library Functions ////////////////
