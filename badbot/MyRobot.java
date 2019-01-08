@@ -21,7 +21,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public int BOARD_SIZE;
 
 	// Random number generator
-	//public Random rng;
+	public SimpleRandom rng;
 
 	// Cached data
 	public Robot[] visibleRobots;
@@ -30,6 +30,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Secret private variables
 	private SpecificRobotController mySpecificRobotController;
 	private boolean hasInitialised;
+	private Communicator communications;
 
 	public Action turn() {
 
@@ -37,6 +38,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// We can't use the constructor because all of the inherited variables seem to be null
 		if (!hasInitialised) {
 			BOARD_SIZE = map.length;
+			rng = new SimpleRandom();
 			if (me.unit == SPECS.CASTLE) {
 				mySpecificRobotController = new CastleController();
 			} else if (me.unit == SPECS.PILGRIM) {
@@ -44,6 +46,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else {
 				mySpecificRobotController = null;
 			}
+			communications = new Communicator();
+
 			hasInitialised = true;
 		}
 
@@ -60,6 +64,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			log("Something bad happened: "+aVeryBadThingHappened.getMessage());
 		} finally {
 			// Cleanup that should happen regardless of whether we threw an exception
+			communications.stepTurn();
 		}
 
 		return myAction;
@@ -76,6 +81,41 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	public boolean inBounds(int x, int y) {
 		return (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE);
+	}
+
+	////////////////// Communications library //////////////////
+
+	// Obfuscate everything we send so that enemies don't get anything
+	// meaningful out of it
+	private strictfp class Communicator {
+
+		private int maskPrevTurn;
+		private int maskThisTurn;
+		private SimpleRandom gen;
+
+		public Communicator() {
+			maskPrevTurn = 0x420b1a3e;
+			gen = new SimpleRandom(maskPrevTurn);
+			maskThisTurn = gen.nextInt();
+
+			maskPrevTurn %= (1<<(SPECS.COMMUNICATION_BITS));
+			maskThisTurn %= (1<<(SPECS.COMMUNICATION_BITS));
+		}
+
+		public int readMessage(Robot broadcaster) {
+			return broadcaster.signal ^ maskPrevTurn;
+		}
+
+		public void sendMessage(int value, int signalRange) {
+			signal(value^maskThisTurn, signalRange);
+		}
+
+		public void stepTurn() {
+			maskPrevTurn = maskThisTurn;
+			maskThisTurn = gen.nextInt();
+			maskThisTurn %= (1<<(SPECS.COMMUNICATION_BITS));
+		}
+
 	}
 
 	///////// Specific Robot Controller Implementation /////////
@@ -141,7 +181,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 60))) { // Mine karbonite
 				myAction = mine();
 			} else { // Just move in a random direction
-				int dir = (int)(Math.random()*8);
+				int dir = rng.nextInt()%8;
 				int newx = x+dx[dir], newy = y+dy[dir];
 				if (inBounds(newx, newy) &&
 					map[newy][newx] == MAP_PASSABLE &&
