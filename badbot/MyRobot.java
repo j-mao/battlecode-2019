@@ -7,8 +7,9 @@ import java.util.*;
 public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Constants for direction choosing
-	public final int[] dx = {-1, -1, -1, 0, 0, 1, 1, 1};
-	public final int[] dy = {-1, 0, 1, -1, 1, -1, 0, 1};
+	// Permuted with r^2=1 first to ensure variety and economy
+	public final int[] dx = {-1, 0, 0, 1, -1, -1, 1, 1};
+	public final int[] dy = {0, -1, 1, 0, -1, 1, -1, 1};
 
 	// Constants for parsing visibleRobotMap
 	public final int MAP_EMPTY = 0;
@@ -332,47 +333,58 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = mine();
 			} else if (myAction == null) {
 				// Pathfind to nearest unoccupied resource, or a structure to deposit our resources
-				int bestDir = -1;
+				int bestDx = 0, bestDy = 0;
 
 				Queue<Integer> qX = new LinkedList<>();
 				Queue<Integer> qY = new LinkedList<>();
-				Queue<Integer> qD = new LinkedList<>();
-				qX.add(x); qY.add(y); qD.add(-1);
+				Queue<Integer> qDx = new LinkedList<>();
+				Queue<Integer> qDy = new LinkedList<>();
+				qX.add(x); qY.add(y); qDx.add(0); qDy.add(0);
 				bfsResetVisited();
 				bfsVisited[y][x] = bfsRunId;
 
 				while (!qX.isEmpty()) {
-					int ux = qX.poll(), uy = qY.poll(), ud = qD.poll();
+					int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
 					if ((visibleRobotMap[uy][ux] <= 0 && karboniteMap[uy][ux] && me.karbonite != 20) ||
 						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != 60) ||
 						(isFriendlyStructure(visibleRobotMap[uy][ux]) && (me.karbonite > 0 || me.fuel > 0))) {
-						bestDir = ud;
+						bestDx = udx;
+						bestDy = udy;
 						break;
 					}
 					if (visibleRobotMap[uy][ux] > 0 && ux != x && uy != y) {
 						continue;
 					}
-					for (int i = 0; i < 8; i++) {
-						if (inBounds(ux+dx[i], uy+dy[i]) && bfsVisited[uy+dy[i]][ux+dx[i]] != bfsRunId) {
-							if (map[uy+dy[i]][ux+dx[i]] == MAP_PASSABLE) {
-								bfsVisited[uy+dy[i]][ux+dx[i]] = bfsRunId;
-								qX.add(ux+dx[i]);
-								qY.add(uy+dy[i]);
-								if (ud == -1) qD.add(i);
-								else qD.add(ud);
+					for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
+						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
+							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
+								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE) {
+									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
+									qX.add(ux+_dx);
+									qY.add(uy+_dy);
+									if (udx == 0 && udy == 0) {
+										qDx.add(_dx);
+										qDy.add(_dy);
+									} else {
+										qDx.add(udx);
+										qDy.add(udy);
+									}
+								}
 							}
 						}
 					}
 				}
 
-				if (bestDir == -1) {
-					bestDir = rng.nextInt()%8;
+				if (bestDx == 0 && bestDy == 0) {
+					int randDir = rng.nextInt()%8;
+					bestDx = dx[randDir];
+					bestDy = dy[randDir];
 				}
-				int newx = x+dx[bestDir], newy = y+dy[bestDir];
+				int newx = x+bestDx, newy = y+bestDy;
 				if (inBounds(newx, newy) &&
 					map[newy][newx] == MAP_PASSABLE &&
 					visibleRobotMap[newy][newx] == MAP_EMPTY) {
-					myAction = move(dx[bestDir], dy[bestDir]);
+					myAction = move(bestDx, bestDy);
 				}
 			}
 
