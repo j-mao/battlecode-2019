@@ -127,6 +127,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return isFriendlyStructure(getRobot(robotId));
 	}
 
+	public boolean isFriendlyStructure(int x, int y) {
+		return knownStructures[y][x] == OUR_CASTLE || knownStructures[y][x] == OUR_CHURCH;
+	}
+
 	public boolean isEnemyUnit(Robot r) {
 		return isVisible(r) && r.team != me.team;
 	}
@@ -315,7 +319,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 			int x = me.x;
 			int y = me.y;
-			if (me.karbonite == 20 || me.fuel == 60) { // Try to give to an adjacent castle
+			if (me.karbonite == 20 || me.fuel == 100) { // Try to give to an adjacent castle
 				for (int dir = 0; dir < 8; dir++) {
 					if (inBounds(x+dx[dir], y+dy[dir])) {
 						int unit = visibleRobotMap[y+dy[dir]][x+dx[dir]];
@@ -330,7 +334,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null &&
-				((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 60))) { // Mine karbonite
+				((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 100))) { // Mine karbonite
 				myAction = mine();
 			} else if (myAction == null) {
 				// Pathfind to nearest unoccupied resource, or a structure to deposit our resources
@@ -347,13 +351,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				while (!qX.isEmpty()) {
 					int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
 					if ((visibleRobotMap[uy][ux] <= 0 && karboniteMap[uy][ux] && me.karbonite != 20) ||
-						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != 60) ||
-						(isFriendlyStructure(visibleRobotMap[uy][ux]) && (me.karbonite > 0 || me.fuel > 0))) {
+						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != 100) ||
+						(isFriendlyStructure(ux, uy) && (me.karbonite > 0 || me.fuel > 0))) {
 						bestDx = udx;
 						bestDy = udy;
 						break;
 					}
-					if (visibleRobotMap[uy][ux] > 0 && ux != x && uy != y) {
+					if (visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y)) {
 						continue;
 					}
 					for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
@@ -433,7 +437,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						bestDy = udy;
 						break;
 					}
-					if (visibleRobotMap[uy][ux] > 0 && ux != x && uy != y) {
+					if (visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y)) {
 						continue;
 					}
 					for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
