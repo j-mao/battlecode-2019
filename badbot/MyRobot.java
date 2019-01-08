@@ -63,8 +63,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				mySpecificRobotController = new CastleController();
 			} else if (me.unit == SPECS.PILGRIM) {
 				mySpecificRobotController = new PilgrimController();
-			} else if (me.unit == SPECS.CRUSADER) {
-				mySpecificRobotController = new CrusaderController();
+			} else if (me.unit == SPECS.PREACHER) {
+				mySpecificRobotController = new PreacherController();
 			} else {
 				mySpecificRobotController = null;
 			}
@@ -286,7 +286,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int toBuild = -1;
 			toBuild = SPECS.PILGRIM;
 			if (me.turn > 30) {
-				toBuild = SPECS.CRUSADER;
+				toBuild = SPECS.PREACHER;
 			}
 			if (karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
 					fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
@@ -392,10 +392,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
-	private strictfp class CrusaderController implements SpecificRobotController {
+	private strictfp class PreacherController implements SpecificRobotController {
 
 		// Initialise internal state
-		public CrusaderController() {
+		public PreacherController() {
 		}
 
 		public Action runTurn() throws BCException {
