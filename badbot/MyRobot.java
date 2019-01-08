@@ -174,8 +174,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		for (int i = x-visionRadius; i <= x+visionRadius; i++) {
 			for (int j = y-visionRadius; j <= y+visionRadius; j++) {
 				if (inBounds(i, j) && visibleRobotMap[j][i] != MAP_INVISIBLE) {
-					if (visibleRobotMap[j][i] != MAP_EMPTY) {
+					if (visibleRobotMap[j][i] == MAP_EMPTY) {
 						knownStructures[j][i] = NO_STRUCTURE;
+					} else {
 						int unit = visibleRobotMap[j][i];
 						Robot robot = getRobot(unit);
 						if (robot != null) { // Sanity check
