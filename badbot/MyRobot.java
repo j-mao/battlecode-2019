@@ -121,35 +121,35 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = null;
 			int x = me.x;
-    		int y = me.y;
-    		if (me.karbonite == 20 || me.fuel == 60) { // Try to give to an adjacent church
-    			for (int dir = 0; dir < 8; dir++) {
-    				if (inBounds(x+dx[dir], y+dy[dir])) {
-    					int unit = visibleRobotMap[y+dy[dir]][x+dx[dir]];
-    					if (unit != 0 && unit != -1) {
-    						Robot robot = getRobot(unit);
-    						if (robot.team == me.team && robot.unit == 0) {
-    							log("Giving " + Integer.toString(me.karbonite) + " and " + Integer.toString(me.fuel) + " fuel");
-    							myAction = give(dx[dir], dy[dir], me.karbonite, me.fuel); 
-    						}
-    					}
-    				}
-    			}
-    		}
+			int y = me.y;
+			if (me.karbonite == 20 || me.fuel == 60) { // Try to give to an adjacent church
+				for (int dir = 0; dir < 8; dir++) {
+					if (inBounds(x+dx[dir], y+dy[dir])) {
+						int unit = visibleRobotMap[y+dy[dir]][x+dx[dir]];
+						if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
+							Robot robot = getRobot(unit);
+							if (robot.team == me.team && robot.unit == 0) {
+								log("Giving " + Integer.toString(me.karbonite) + " and " + Integer.toString(me.fuel) + " fuel");
+								myAction = give(dx[dir], dy[dir], me.karbonite, me.fuel); 
+							}
+						}
+					}
+				}
+			}
 
-    		if (myAction == null && 
-    		((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 60))) { // Mine karbonite
-    			myAction = mine();
-    		} else { // Just move in a random direction
-    			int dir = (int)(Math.random()*8);
-    			int newx = x+dx[dir], newy = y+dy[dir];
-    			if (inBounds(newx, newy) && 
-    				map[newy][newx] == MAP_PASSABLE && 
-    				visibleRobotMap[newy][newx] == MAP_EMPTY) {
-    				myAction = move(dx[dir], dy[dir]);
-    			}
-    		}
-    	
+			if (myAction == null &&
+				((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 60))) { // Mine karbonite
+				myAction = mine();
+			} else { // Just move in a random direction
+				int dir = (int)(Math.random()*8);
+				int newx = x+dx[dir], newy = y+dy[dir];
+				if (inBounds(newx, newy) &&
+					map[newy][newx] == MAP_PASSABLE &&
+					visibleRobotMap[newy][newx] == MAP_EMPTY) {
+					myAction = move(dx[dir], dy[dir]);
+				}
+			}
+
 			return myAction;
 		}
 	}
