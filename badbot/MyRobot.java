@@ -116,11 +116,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		public Action runTurn() throws BCException {
 
 			Action myAction = null;
+			int x = me.x;
+    		int y = me.y;
+    		if (me.karbonite == 20 || me.fuel == 60) { // Try to give to an adjacent church
+    			for (int i = -1; i <= 1; i++) {
+    				for (int j = -1; j <= 1; j++) {
+    					if (inBounds(x+i, y+j)) {
+    						int unit = visibleRobotMap[y+j][x+i];
+    						if (unit != 0 && unit != -1) {
+    							Robot robot = getRobot(unit);
+    							if (robot.team == me.team && robot.unit == 0) {
+    								log("Giving " + Integer.toString(me.karbonite) + " and " + Integer.toString(me.fuel) + " fuel");
+    								myAction = give(i, j, me.karbonite, me.fuel); // Currently bugged
+    							}
+    						}
+    					}
+    				}
+    			}
+    		}
 
-			//int moveDir = rng.nextInt() % 8;
-			int moveDir = 0;
-			myAction = move(dx[moveDir], dy[moveDir]);
-
+    		if (myAction == null && ((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 60))) { // Mine karbonite
+    			myAction = mine();
+    		} else {
+    			int dir = (int)(Math.random()*8);
+    			int newx = x+dx[dir], newy = y+dy[dir];
+    			if (inBounds(newx, newy) && 
+    				map[newy][newx] == true && 
+    				visibleRobotMap[newy][newx] == MAP_EMPTY) {
+    				myAction = move(dx[dir], dy[dir]);
+    			}
+    		}
+    	
 			return myAction;
 		}
 	}
