@@ -32,10 +32,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Storing locations of known structures
 	public final int NO_STRUCTURE = 0;
-	public final int OUR_CASTLE = 1;
-	public final int OUR_CHURCH = 2;
-	public final int ENEMY_CASTLE = 3;
-	public final int ENEMY_CHURCH = 4;
+	public final int OUR_CASTLE = 4;
+	public final int OUR_CHURCH = 5;
+	public final int ENEMY_CASTLE = 6;
+	public final int ENEMY_CHURCH = 7;
 	public int[][] knownStructures; // An array of size BOARD_SIZE*BOARD_SIZE storing the locations of known structures
 
 	// Board symmetry 
@@ -61,6 +61,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				mySpecificRobotController = new CastleController();
 			} else if (me.unit == SPECS.PILGRIM) {
 				mySpecificRobotController = new PilgrimController();
+			} else if (me.unit == SPECS.CRUSADER) {
+				mySpecificRobotController = new CrusaderController();
 			} else {
 				mySpecificRobotController = null;
 			}
@@ -106,6 +108,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE);
 	}
 
+	public int distanceSquared(Robot r1, Robot r2) {
+		return (r1.x-r2.x)*(r1.x-r2.x) + (r1.y-r2.y)*(r1.y-r2.y);
+	}
+
 	public void bfsResetVisited() {
 		for (int i = 0; i < BOARD_SIZE; i++) {
 			for (int j = 0; j < BOARD_SIZE; j++) {
@@ -121,6 +127,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public boolean isFriendlyStructure(int robotId) {
 		if (robotId <= 0) return false;
 		return isFriendlyStructure(getRobot(robotId));
+	}
+
+	public boolean isEnemyUnit(Robot r) {
+		return isVisible(r) && r.team != me.team;
+	}
+
+	public boolean isEnemyUnit(int robotId) {
+		if (robotId <= 0) return false;
+		return isEnemyUnit(getRobot(robotId));
+	}
+
+	public boolean isEnemyStructure(int x, int y) {
+		return knownStructures[y][x] == ENEMY_CASTLE || knownStructures[y][x] == ENEMY_CHURCH;
 	}
 
 	public int symmetricXCoord(int x, int symmetry) {
@@ -163,12 +182,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						Robot robot = getRobot(unit);
 						if (robot != null) { // Sanity check
 							if (robot.unit == SPECS.CASTLE && robot.team == me.team) {
-								if (knownStructures[j][i] == NO_STRUCTURE) {
-									// We can derive from this, the location of the enemy castle
-									int ei = symmetricXCoord(i, SYMMETRY_STATUS);
-									int ej = symmetricYCoord(j, SYMMETRY_STATUS);
-									if (inBounds(ei, ej)) knownStructures[ej][ei] = ENEMY_CASTLE; 
-								}
 								knownStructures[j][i] = OUR_CASTLE;
 							} else if (robot.unit == SPECS.CASTLE && robot.team != me.team) {
 								knownStructures[j][i] = ENEMY_CASTLE;
@@ -178,6 +191,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								knownStructures[j][i] = ENEMY_CHURCH;
 							}
 						}
+					}
+					// Because of symmetry, we know a bit more
+					if ((knownStructures[j][i] == OUR_CASTLE || knownStructures[j][i] == ENEMY_CASTLE) && SYMMETRY_STATUS != BOTH_SYMMETRICAL) {
+						knownStructures[symmetricYCoord(j, SYMMETRY_STATUS)][symmetricXCoord(i, SYMMETRY_STATUS)] = knownStructures[j][i]^2;
 					}
 				}
 			}
@@ -268,7 +285,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = null;
 
-			int toBuild = SPECS.PILGRIM;
+			int toBuild = -1;
+			toBuild = SPECS.PILGRIM;
+			if (me.turn > 30) {
+				toBuild = SPECS.CRUSADER;
+			}
 			if (karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
 					fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
 				for (int i = 0; i < 8; i++) {
@@ -302,7 +323,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
 							Robot robot = getRobot(unit);
 							if (robot.team == me.team && robot.unit == SPECS.CASTLE) {
-								log("Giving " + Integer.toString(me.karbonite) + " and " + Integer.toString(me.fuel) + " fuel");
 								myAction = give(dx[dir], dy[dir], me.karbonite, me.fuel); 
 							}
 						}
@@ -313,7 +333,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null &&
 				((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 60))) { // Mine karbonite
 				myAction = mine();
-			} else {
+			} else if (myAction == null) {
 				// Pathfind to nearest unoccupied resource, or a structure to deposit our resources
 				int bestDir = -1;
 
@@ -329,6 +349,75 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if ((visibleRobotMap[uy][ux] <= 0 && karboniteMap[uy][ux] && me.karbonite != 20) ||
 						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != 60) ||
 						(isFriendlyStructure(visibleRobotMap[uy][ux]) && (me.karbonite > 0 || me.fuel > 0))) {
+						bestDir = ud;
+						break;
+					}
+					if (visibleRobotMap[uy][ux] > 0 && ux != x && uy != y) {
+						continue;
+					}
+					for (int i = 0; i < 8; i++) {
+						if (inBounds(ux+dx[i], uy+dy[i]) && !bfsVisited[uy+dy[i]][ux+dx[i]]) {
+							if (map[uy+dy[i]][ux+dx[i]] == MAP_PASSABLE) {
+								bfsVisited[uy+dy[i]][ux+dx[i]] = true;
+								qX.add(ux+dx[i]);
+								qY.add(uy+dy[i]);
+								if (ud == -1) qD.add(i);
+								else qD.add(ud);
+							}
+						}
+					}
+				}
+
+				if (bestDir == -1) {
+					bestDir = rng.nextInt()%8;
+				}
+				int newx = x+dx[bestDir], newy = y+dy[bestDir];
+				if (inBounds(newx, newy) &&
+					map[newy][newx] == MAP_PASSABLE &&
+					visibleRobotMap[newy][newx] == MAP_EMPTY) {
+					myAction = move(dx[bestDir], dy[bestDir]);
+				}
+			}
+
+			return myAction;
+		}
+	}
+
+	private strictfp class CrusaderController implements SpecificRobotController {
+
+		// Initialise internal state
+		public CrusaderController() {
+		}
+
+		public Action runTurn() throws BCException {
+
+			Action myAction = null;
+			int x = me.x;
+			int y = me.y;
+			for (Robot r: visibleRobots) { // Try to attack
+				if (isVisible(r)) {
+					if (r.team != me.team &&
+						distanceSquared(me, r) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
+						distanceSquared(me, r) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+						myAction = attack(r.x-me.x, r.y-me.y);
+					}
+				}
+			}
+
+			if (myAction == null) {
+				// Pathfind to nearest enemy
+				int bestDir = -1;
+
+				Queue<Integer> qX = new LinkedList<>();
+				Queue<Integer> qY = new LinkedList<>();
+				Queue<Integer> qD = new LinkedList<>();
+				qX.add(x); qY.add(y); qD.add(-1);
+				bfsResetVisited();
+				bfsVisited[y][x] = true;
+
+				while (!qX.isEmpty()) {
+					int ux = qX.poll(), uy = qY.poll(), ud = qD.poll();
+					if (isEnemyUnit(visibleRobotMap[uy][ux]) || isEnemyStructure(ux, uy)) {
 						bestDir = ud;
 						break;
 					}
