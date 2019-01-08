@@ -48,3 +48,6 @@ tags
 
 # Replay files in general
 *.bc19
+
+# Compiled bots
+compiled_bot*.js
