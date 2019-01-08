@@ -51,9 +51,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		try {
 			// Dispatch execution to the specific controller
-			mySpecificRobotController.runTurn();
+			myAction = mySpecificRobotController.runTurn();
 		} catch (Exception aVeryBadThingHappened) {
-			log("Something bad happened");
+			log("Something bad happened: "+aVeryBadThingHappened.getMessage());
 		} finally {
 			// Cleanup that should happen regardless of whether we threw an exception
 		}
@@ -95,7 +95,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
 				for (int i = 0; i < 8; i++) {
 					if (inBounds(me.x+dx[i], me.y+dy[i]) &&
-							visibleRobotMap[me.x+dx[i]][me.y+dy[i]] == MAP_EMPTY) {
+						map[me.y+dy[i]][me.x+dx[i]] &&
+						visibleRobotMap[me.y+dy[i]][me.x+dx[i]] == MAP_EMPTY) {
 						myAction = buildUnit(toBuild, dx[i], dy[i]);
 						break;
 					}
