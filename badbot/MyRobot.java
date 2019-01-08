@@ -30,6 +30,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Tools
 	public boolean[][] bfsVisited;
 
+	// Storing locations of known structures
+	public final int NO_STRUCTURE = 0;
+	public final int OUR_CASTLE = 1;
+	public final int OUR_CHURCH = 2;
+	public final int ENEMY_CASTLE = 3;
+	public final int ENEMY_CHURCH = 4;
+	public int[][] knownStructures; // An array of size BOARD_SIZE*BOARD_SIZE storing the locations of known structures
+
+	// Board symmetry 
+	public final int BOTH_SYMMETRICAL = 0; // This is pretty unlucky 
+	public final int HOR_SYMMETRICAL = 1;
+	public final int VER_SYMMETRICAL = 2;
+	public int SYMMETRY_STATUS;
+
 	// Secret private variables
 	private SpecificRobotController mySpecificRobotController;
 	private boolean hasInitialised;
@@ -51,6 +65,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				mySpecificRobotController = null;
 			}
 			communications = new Communicator();
+			knownStructures = new int[BOARD_SIZE][BOARD_SIZE];
+			determineSymmetricOrientation();
 
 			hasInitialised = true;
 		}
@@ -58,6 +74,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// Initialise globals for this turn
 		visibleRobots = getVisibleRobots();
 		visibleRobotMap = getVisibleRobotMap();
+
+		// Update the cache of known structure locations
+		updateStructureCache();
 
 		Action myAction = null;
 
@@ -102,6 +121,100 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public boolean isFriendlyStructure(int robotId) {
 		if (robotId <= 0) return false;
 		return isFriendlyStructure(getRobot(robotId));
+	}
+
+	public int symmetricXCoord(int x, int symmetry) {
+		if (symmetry == BOTH_SYMMETRICAL) { // If we don't know, return an invalid coord
+			return -1; 
+		} else if (symmetry == HOR_SYMMETRICAL) {
+			return x;
+		} else if (symmetry == VER_SYMMETRICAL) {
+			return BOARD_SIZE - x - 1;
+		}
+	}
+
+	public int symmetricYCoord(int y, int symmetry) {
+		if (symmetry == BOTH_SYMMETRICAL) { // If we don't know, return an invalid coord
+			return -1; 
+		} else if (symmetry == VER_SYMMETRICAL) {
+			return y;
+		} else if (symmetry == HOR_SYMMETRICAL) {
+			return BOARD_SIZE - y - 1;
+		}
+	}
+
+	///////// Storing known structure locations /////////
+
+	// Each turn, consider the squares we can see and update known structure locations
+	// Allows us to locate the nearest structure to deposit resources, or enemies to attack
+
+	public void updateStructureCache() { // Called at the start of every turn
+		// Iterates over all squares we can see to update the cache
+		int visionRadius = SPECS.UNITS[me.unit].VISION_RADIUS;
+		visionRadius = (int)Math.sqrt(visionRadius);
+		int x = me.x;
+		int y = me.y;
+		for (int i = x-visionRadius; i <= x+visionRadius; i++) {
+			for (int j = y-visionRadius; j <= y+visionRadius; j++) {
+				if (inBounds(i, j) && visibleRobotMap[j][i] != MAP_INVISIBLE) {
+					if (visibleRobotMap[j][i] != MAP_EMPTY) {
+						knownStructures[j][i] = NO_STRUCTURE;
+						int unit = visibleRobotMap[j][i];
+						Robot robot = getRobot(unit);
+						if (robot != null) { // Sanity check
+							if (robot.unit == SPECS.CASTLE && robot.team == me.team) {
+								if (knownStructures[j][i] == NO_STRUCTURE) {
+									// We can derive from this, the location of the enemy castle
+									int ei = symmetricXCoord(i, SYMMETRY_STATUS);
+									int ej = symmetricYCoord(j, SYMMETRY_STATUS);
+									if (inBounds(ei, ej)) knownStructures[ej][ei] = ENEMY_CASTLE; 
+								}
+								knownStructures[j][i] = OUR_CASTLE;
+							} else if (robot.unit == SPECS.CASTLE && robot.team != me.team) {
+								knownStructures[j][i] = ENEMY_CASTLE;
+							} else if (robot.unit == SPECS.CHURCH && robot.team == me.team) {
+								knownStructures[j][i] = OUR_CHURCH;
+							} else if (robot.unit == SPECS.CHURCH && robot.team != me.team) {
+								knownStructures[j][i] = ENEMY_CHURCH;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Determines if the board is horizontally or vertically symmetrical
+	public void determineSymmetricOrientation() {
+		boolean isHor = isSymmetrical(HOR_SYMMETRICAL);
+		boolean isVer = isSymmetrical(VER_SYMMETRICAL);
+		if (isHor && isVer) {
+			SYMMETRY_STATUS = 0;
+			if (me.unit == SPECS.CASTLE) log("Error: Board is both horizontally and vertically symmetrical");
+		} else if (!isHor && !isVer) {
+			SYMMETRY_STATUS = 0;
+			if (me.unit == SPECS.CASTLE) log("Error: Board is neither horizontally nor vertically symmetrical");
+		} else if (isHor) {
+			SYMMETRY_STATUS = HOR_SYMMETRICAL;
+			if (me.unit == SPECS.CASTLE) log("Board is horizontally symmetical");
+		} else {
+			SYMMETRY_STATUS = VER_SYMMETRICAL;
+			if (me.unit == SPECS.CASTLE) log("Board is verically symmetical");
+		}
+	}
+
+	public boolean isSymmetrical(int symmetry) {
+		for (int i = 0; i < BOARD_SIZE; i++) {
+			for (int j = 0; j < BOARD_SIZE; j++) {
+				// Check passable/impassable, karbonite and fuel deposits
+				int si = symmetricXCoord(i, symmetry);
+				int sj = symmetricYCoord(j, symmetry);
+				if (map[j][i] != map[sj][si]) return false;
+				if (karboniteMap[j][i] != karboniteMap[sj][si]) return false;
+				if (fuelMap[j][i] != fuelMap[sj][si]) return false;
+			}
+		}
+		return true;
 	}
 
 	////////////////// Communications library //////////////////
@@ -167,7 +280,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
-
 			return myAction;
 		}
 	}
