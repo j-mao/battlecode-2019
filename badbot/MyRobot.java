@@ -27,6 +27,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public Robot[] visibleRobots;
 	public int[][] visibleRobotMap;
 
+	// Tools
+	public boolean[][] bfsVisited;
+
 	// Secret private variables
 	private SpecificRobotController mySpecificRobotController;
 	private boolean hasInitialised;
@@ -39,6 +42,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		if (!hasInitialised) {
 			BOARD_SIZE = map.length;
 			rng = new SimpleRandom();
+			bfsVisited = new boolean[BOARD_SIZE][BOARD_SIZE];
 			if (me.unit == SPECS.CASTLE) {
 				mySpecificRobotController = new CastleController();
 			} else if (me.unit == SPECS.PILGRIM) {
@@ -81,6 +85,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	public boolean inBounds(int x, int y) {
 		return (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE);
+	}
+
+	public void bfsResetVisited() {
+		for (int i = 0; i < BOARD_SIZE; i++) {
+			for (int j = 0; j < BOARD_SIZE; j++) {
+				bfsVisited[i][j] = false;
+			}
+		}
+	}
+
+	public boolean isFriendlyStructure(Robot r) {
+		return isVisible(r) && r.team == me.team && (r.unit == SPECS.CASTLE || r.unit == SPECS.CHURCH);
+	}
+
+	public boolean isFriendlyStructure(int robotId) {
+		if (robotId <= 0) return false;
+		return isFriendlyStructure(getRobot(robotId));
 	}
 
 	////////////////// Communications library //////////////////
@@ -162,13 +183,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 			int x = me.x;
 			int y = me.y;
-			if (me.karbonite == 20 || me.fuel == 60) { // Try to give to an adjacent church
+			if (me.karbonite == 20 || me.fuel == 60) { // Try to give to an adjacent castle
 				for (int dir = 0; dir < 8; dir++) {
 					if (inBounds(x+dx[dir], y+dy[dir])) {
 						int unit = visibleRobotMap[y+dy[dir]][x+dx[dir]];
 						if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
 							Robot robot = getRobot(unit);
-							if (robot.team == me.team && robot.unit == 0) {
+							if (robot.team == me.team && robot.unit == SPECS.CASTLE) {
 								log("Giving " + Integer.toString(me.karbonite) + " and " + Integer.toString(me.fuel) + " fuel");
 								myAction = give(dx[dir], dy[dir], me.karbonite, me.fuel); 
 							}
@@ -180,13 +201,49 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null &&
 				((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 60))) { // Mine karbonite
 				myAction = mine();
-			} else { // Just move in a random direction
-				int dir = rng.nextInt()%8;
-				int newx = x+dx[dir], newy = y+dy[dir];
+			} else {
+				// Pathfind to nearest unoccupied resource, or a structure to deposit our resources
+				int bestDir = -1;
+
+				Queue<Integer> qX = new LinkedList<>();
+				Queue<Integer> qY = new LinkedList<>();
+				Queue<Integer> qD = new LinkedList<>();
+				qX.add(x); qY.add(y); qD.add(-1);
+				bfsResetVisited();
+				bfsVisited[y][x] = true;
+
+				while (!qX.isEmpty()) {
+					int ux = qX.poll(), uy = qY.poll(), ud = qD.poll();
+					if ((visibleRobotMap[uy][ux] <= 0 && karboniteMap[uy][ux] && me.karbonite != 20) ||
+						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != 60) ||
+						(isFriendlyStructure(visibleRobotMap[uy][ux]) && (me.karbonite > 0 || me.fuel > 0))) {
+						bestDir = ud;
+						break;
+					}
+					if (visibleRobotMap[uy][ux] > 0 && ux != x && uy != y) {
+						continue;
+					}
+					for (int i = 0; i < 8; i++) {
+						if (inBounds(ux+dx[i], uy+dy[i]) && !bfsVisited[uy+dy[i]][ux+dx[i]]) {
+							if (map[uy+dy[i]][ux+dx[i]] == MAP_PASSABLE) {
+								bfsVisited[uy+dy[i]][ux+dx[i]] = true;
+								qX.add(ux+dx[i]);
+								qY.add(uy+dy[i]);
+								if (ud == -1) qD.add(i);
+								else qD.add(ud);
+							}
+						}
+					}
+				}
+
+				if (bestDir == -1) {
+					bestDir = rng.nextInt()%8;
+				}
+				int newx = x+dx[bestDir], newy = y+dy[bestDir];
 				if (inBounds(newx, newy) &&
 					map[newy][newx] == MAP_PASSABLE &&
 					visibleRobotMap[newy][newx] == MAP_EMPTY) {
-					myAction = move(dx[dir], dy[dir]);
+					myAction = move(dx[bestDir], dy[bestDir]);
 				}
 			}
 
