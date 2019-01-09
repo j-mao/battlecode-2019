@@ -41,6 +41,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public int[][] knownStructures; // An array of size BOARD_SIZE*BOARD_SIZE storing the locations of known structures
 	public int[][] knownStructuresLastSeen; // the last round when this unit was seen
 	public int knownStructuresRunId;
+	public LinkedList<Integer> knownStructuresXCoords;
+	public LinkedList<Integer> knownStructuresYCoords;
 
 	// Board symmetry 
 	public final int BOTH_SYMMETRICAL = 0; // This is pretty unlucky 
@@ -72,6 +74,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			communications = new Communicator();
 			knownStructures = new int[BOARD_SIZE][BOARD_SIZE];
+			knownStructuresXCoords = new LinkedList<>();
+			knownStructuresYCoords = new LinkedList<>();
 			// note: default value of knownStructures elements is 0, which is
 			// NO_STRUCTURE anyway, so we don't have to do any init nice
 			knownStructuresLastSeen = new int[BOARD_SIZE][BOARD_SIZE];
@@ -132,8 +136,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	public boolean isFriendlyStructure(int x, int y) {
-		return knownStructuresLastSeen[y][x] == knownStructuresRunId && 
-			(knownStructures[y][x] == OUR_CASTLE || knownStructures[y][x] == OUR_CHURCH);
+		return (knownStructures[y][x] == OUR_CASTLE || knownStructures[y][x] == OUR_CHURCH);
 	}
 
 	public boolean isEnemyUnit(Robot r) {
@@ -146,8 +149,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	public boolean isEnemyStructure(int x, int y) {
-		return knownStructuresLastSeen[y][x] == knownStructuresRunId &&
-			(knownStructures[y][x] == ENEMY_CASTLE || knownStructures[y][x] == ENEMY_CHURCH);
+		return (knownStructures[y][x] == ENEMY_CASTLE || knownStructures[y][x] == ENEMY_CHURCH);
 	}
 
 	public int symmetricXCoord(int x, int symmetry) {
@@ -200,8 +202,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int i = r.x;
 				int j = r.y;
 
-				knownStructuresLastSeen[j][i] = knownStructuresRunId;
-
 				if (r.unit == SPECS.CASTLE && r.team == me.team) {
 					knownStructures[j][i] = OUR_CASTLE;
 				} else if (r.unit == SPECS.CASTLE && r.team != me.team) {
@@ -211,15 +211,36 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				} else if (r.unit == SPECS.CHURCH && r.team != me.team) {
 					knownStructures[j][i] = ENEMY_CHURCH;
 				}
+				if (knownStructures[j][i] != NO_STRUCTURE && knownStructuresLastSeen[j][i] == 0) { 
+					// First time we've seen this stucture, store its location
+					knownStructuresXCoords.add(i);
+					knownStructuresYCoords.add(j);
+				}
 
 				// Because of symmetry, we know a bit more
-				if ((knownStructures[j][i] == OUR_CASTLE || knownStructures[j][i] == ENEMY_CASTLE) && SYMMETRY_STATUS != BOTH_SYMMETRICAL) {
+				if 	(knownStructuresLastSeen[j][i] == 0 && // Only run this if its the first time we've seen this structure
+					((knownStructures[j][i] == OUR_CASTLE || knownStructures[j][i] == ENEMY_CASTLE) && SYMMETRY_STATUS != BOTH_SYMMETRICAL)) {
 					int sj = symmetricYCoord(j, SYMMETRY_STATUS), si = symmetricXCoord(i, SYMMETRY_STATUS);
 					knownStructures[sj][si] = knownStructures[j][i]^2;
 					knownStructuresLastSeen[sj][si] = knownStructuresRunId;
 				}
+
+				knownStructuresLastSeen[j][i] = knownStructuresRunId;
+
 			} catch (Exception e) {
 				continue;
+			}
+		}
+		// Iterate over all structures we have ever seen and remove them if we can see they are dead
+		Iterator<Integer> xiterator = knownStructuresXCoords.iterator();
+		Iterator<Integer> yiterator = knownStructuresYCoords.iterator();
+		while (xiterator.hasNext())
+		{
+			int i = xiterator.next();
+			int j = yiterator.next();
+			if (visibleRobotMap[j][i] == MAP_EMPTY) {
+				knownStructures[j][i] = NO_STRUCTURE;
+				knownStructuresLastSeen[j][i] = 0;
 			}
 		}
 	}
