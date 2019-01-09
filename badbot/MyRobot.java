@@ -305,7 +305,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 			int x = me.x;
 			int y = me.y;
-			if (me.karbonite == 20 || me.fuel == 100) { // Try to give to an adjacent castle
+			if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) { // Try to give to an adjacent castle
 				for (int dir = 0; dir < 8; dir++) {
 					if (inBounds(x+dx[dir], y+dy[dir])) {
 						int unit = visibleRobotMap[y+dy[dir]][x+dx[dir]];
@@ -320,7 +320,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null &&
-				((karboniteMap[y][x] && me.karbonite != 20) || (fuelMap[y][x] && me.fuel != 100))) { // Mine karbonite
+				((karboniteMap[y][x] && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) || (fuelMap[y][x] && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY))) { // Mine karbonite
 				myAction = mine();
 			} else if (myAction == null) {
 				// Pathfind to nearest unoccupied resource, or a structure to deposit our resources
@@ -336,9 +336,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 				while (!qX.isEmpty()) {
 					int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
-					if ((visibleRobotMap[uy][ux] <= 0 && karboniteMap[uy][ux] && me.karbonite != 20) ||
-						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != 100) ||
-						(isFriendlyStructure(ux, uy) && (me.karbonite > 0 || me.fuel > 0))) {
+					if ((visibleRobotMap[uy][ux] <= 0 && karboniteMap[uy][ux] && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
+						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) ||
+						(isFriendlyStructure(ux, uy) && (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY))) {
 						bestDx = udx;
 						bestDy = udy;
 						break;
@@ -350,6 +350,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
 							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
 								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE) {
+									// We can only give to adjacent squares, so the last movement we make towards a castle must be to an adj square
+									if (isFriendlyStructure(ux+_dx, uy+_dy) && _dx*_dx+_dy*_dy > 2) continue;
 									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
 									qX.add(ux+_dx);
 									qY.add(uy+_dy);
