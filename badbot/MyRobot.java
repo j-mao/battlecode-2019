@@ -39,6 +39,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public final int ENEMY_CASTLE = 6;
 	public final int ENEMY_CHURCH = 7;
 	public int[][] knownStructures; // An array of size BOARD_SIZE*BOARD_SIZE storing the locations of known structures
+	public int[][] knownStructuresLastSeen; // the last round when this unit was seen
+	public int knownStructuresRunId;
 
 	// Board symmetry 
 	public final int BOTH_SYMMETRICAL = 0; // This is pretty unlucky 
@@ -63,13 +65,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				mySpecificRobotController = new CastleController();
 			} else if (me.unit == SPECS.PILGRIM) {
 				mySpecificRobotController = new PilgrimController();
-			} else if (me.unit == SPECS.PREACHER) {
-				mySpecificRobotController = new PreacherController();
+			} else if (me.unit == SPECS.PROPHET) {
+				mySpecificRobotController = new ProphetController();
 			} else {
 				mySpecificRobotController = null;
 			}
 			communications = new Communicator();
 			knownStructures = new int[BOARD_SIZE][BOARD_SIZE];
+			// note: default value of knownStructures elements is 0, which is
+			// NO_STRUCTURE anyway, so we don't have to do any init nice
+			knownStructuresLastSeen = new int[BOARD_SIZE][BOARD_SIZE];
 			determineSymmetricOrientation();
 
 			hasInitialised = true;
@@ -127,7 +132,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	public boolean isFriendlyStructure(int x, int y) {
-		return knownStructures[y][x] == OUR_CASTLE || knownStructures[y][x] == OUR_CHURCH;
+		return knownStructuresLastSeen[y][x] == knownStructuresRunId && 
+			(knownStructures[y][x] == OUR_CASTLE || knownStructures[y][x] == OUR_CHURCH);
 	}
 
 	public boolean isEnemyUnit(Robot r) {
@@ -140,7 +146,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	public boolean isEnemyStructure(int x, int y) {
-		return knownStructures[y][x] == ENEMY_CASTLE || knownStructures[y][x] == ENEMY_CHURCH;
+		return knownStructuresLastSeen[y][x] == knownStructuresRunId &&
+			(knownStructures[y][x] == ENEMY_CASTLE || knownStructures[y][x] == ENEMY_CHURCH);
 	}
 
 	public int symmetricXCoord(int x, int symmetry) {
@@ -170,35 +177,49 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	public void updateStructureCache() { // Called at the start of every turn
 		// Iterates over all squares we can see to update the cache
-		int visionRadius = SPECS.UNITS[me.unit].VISION_RADIUS;
-		visionRadius = (int)Math.sqrt(visionRadius);
+
+		// visibleRobots includes more stuff than visibleRobotMap; in particular,
+		// friendly castles, which is pretty desirable
+
+		// "clear" everything
+		knownStructuresRunId++;
+
 		int x = me.x;
 		int y = me.y;
-		for (int i = x-visionRadius; i <= x+visionRadius; i++) {
-			for (int j = y-visionRadius; j <= y+visionRadius; j++) {
-				if (inBounds(i, j) && visibleRobotMap[j][i] != MAP_INVISIBLE) {
-					if (visibleRobotMap[j][i] == MAP_EMPTY) {
-						knownStructures[j][i] = NO_STRUCTURE;
-					} else {
-						int unit = visibleRobotMap[j][i];
-						Robot robot = getRobot(unit);
-						if (robot != null) { // Sanity check
-							if (robot.unit == SPECS.CASTLE && robot.team == me.team) {
-								knownStructures[j][i] = OUR_CASTLE;
-							} else if (robot.unit == SPECS.CASTLE && robot.team != me.team) {
-								knownStructures[j][i] = ENEMY_CASTLE;
-							} else if (robot.unit == SPECS.CHURCH && robot.team == me.team) {
-								knownStructures[j][i] = OUR_CHURCH;
-							} else if (robot.unit == SPECS.CHURCH && robot.team != me.team) {
-								knownStructures[j][i] = ENEMY_CHURCH;
-							}
-						}
-					}
-					// Because of symmetry, we know a bit more
-					if ((knownStructures[j][i] == OUR_CASTLE || knownStructures[j][i] == ENEMY_CASTLE) && SYMMETRY_STATUS != BOTH_SYMMETRICAL) {
-						knownStructures[symmetricYCoord(j, SYMMETRY_STATUS)][symmetricXCoord(i, SYMMETRY_STATUS)] = knownStructures[j][i]^2;
-					}
+
+		for (Robot r : visibleRobots) {
+			// this is thoroughly, thoroughly screwed.
+			// i'm reasonably confident, when this transpiles to JS,
+			// that i or j being undefined will cause an array access at
+			// an undefined location ([j][i]), which will cause an error,
+			// thus jumping to the catch clause with no repercussions.
+			// would be nice if the devs figured out that you could redact
+			// information with -1s instead of deleting it from the object
+			// entirely... anyways
+			try {
+				int i = r.x;
+				int j = r.y;
+
+				knownStructuresLastSeen[j][i] = knownStructuresRunId;
+
+				if (r.unit == SPECS.CASTLE && r.team == me.team) {
+					knownStructures[j][i] = OUR_CASTLE;
+				} else if (r.unit == SPECS.CASTLE && r.team != me.team) {
+					knownStructures[j][i] = ENEMY_CASTLE;
+				} else if (r.unit == SPECS.CHURCH && r.team == me.team) {
+					knownStructures[j][i] = OUR_CHURCH;
+				} else if (r.unit == SPECS.CHURCH && r.team != me.team) {
+					knownStructures[j][i] = ENEMY_CHURCH;
 				}
+
+				// Because of symmetry, we know a bit more
+				if ((knownStructures[j][i] == OUR_CASTLE || knownStructures[j][i] == ENEMY_CASTLE) && SYMMETRY_STATUS != BOTH_SYMMETRICAL) {
+					int sj = symmetricYCoord(j, SYMMETRY_STATUS), si = symmetricXCoord(i, SYMMETRY_STATUS);
+					knownStructures[sj][si] = knownStructures[j][i]^2;
+					knownStructuresLastSeen[sj][si] = knownStructuresRunId;
+				}
+			} catch (Exception e) {
+				continue;
 			}
 		}
 	}
@@ -215,10 +236,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (me.unit == SPECS.CASTLE) log("Error: Board is neither horizontally nor vertically symmetrical");
 		} else if (isHor) {
 			SYMMETRY_STATUS = HOR_SYMMETRICAL;
-			if (me.unit == SPECS.CASTLE) log("Board is horizontally symmetical");
+			if (me.unit == SPECS.CASTLE) log("Board is horizontally symmetrical");
 		} else {
 			SYMMETRY_STATUS = VER_SYMMETRICAL;
-			if (me.unit == SPECS.CASTLE) log("Board is verically symmetical");
+			if (me.unit == SPECS.CASTLE) log("Board is vertically symmetrical");
 		}
 	}
 
@@ -277,7 +298,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int toBuild = -1;
 			toBuild = SPECS.PILGRIM;
 			if (me.turn > 30) {
-				toBuild = SPECS.PREACHER;
+				toBuild = SPECS.PROPHET;
 			}
 			if (karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
 					fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
@@ -385,10 +406,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
-	private strictfp class PreacherController implements SpecificRobotController {
+	private strictfp class ProphetController implements SpecificRobotController {
 
 		// Initialise internal state
-		public PreacherController() {
+		public ProphetController() {
 		}
 
 		public Action runTurn() throws BCException {
