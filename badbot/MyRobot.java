@@ -219,9 +219,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int j = yiterator.next();
 			if (visibleRobotMap[j][i] == MAP_EMPTY) {
 				knownStructures[j][i] = NO_STRUCTURE;
-				knownStructuresSeenBefore[j][i] = false;
-				xiterator.remove();
-				yiterator.remove();
 			}
 		}
 	}
