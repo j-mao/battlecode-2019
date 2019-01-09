@@ -91,7 +91,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			log("Something bad happened: "+aVeryBadThingHappened.getMessage());
 		} finally {
 			// Cleanup that should happen regardless of whether we threw an exception
-			communications.stepTurn();
 		}
 
 		return myAction;
@@ -239,37 +238,24 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	////////////////// Communications library //////////////////
 
-	// Obfuscate everything we send so that enemies don't get anything
-	// meaningful out of it
+	// Obfuscate everything we send so that enemies don't get anything meaningful out of it
+	// Would have liked to make it a one time pad but turn numbers aren't in sync rip
 	private strictfp class Communicator {
 
-		private int maskPrevTurn;
-		private int maskThisTurn;
-		private SimpleRandom gen;
+		private int cipherPad;
 
 		public Communicator() {
-			maskPrevTurn = 0x420b1a3e;
-			gen = new SimpleRandom(maskPrevTurn);
-			maskThisTurn = gen.nextInt();
-
-			maskPrevTurn %= (1<<(SPECS.COMMUNICATION_BITS));
-			maskThisTurn %= (1<<(SPECS.COMMUNICATION_BITS));
+			cipherPad = 0x420b1a3e;
+			cipherPad %= (1<<(SPECS.COMMUNICATION_BITS));
 		}
 
 		public int readMessage(Robot broadcaster) {
-			return broadcaster.signal ^ maskPrevTurn;
+			return broadcaster.signal ^ cipherPad;
 		}
 
 		public void sendMessage(int value, int signalRange) {
-			signal(value^maskThisTurn, signalRange);
+			signal(value^cipherPad, signalRange);
 		}
-
-		public void stepTurn() {
-			maskPrevTurn = maskThisTurn;
-			maskThisTurn = gen.nextInt();
-			maskThisTurn %= (1<<(SPECS.COMMUNICATION_BITS));
-		}
-
 	}
 
 	///////// Specific Robot Controller Implementation /////////
