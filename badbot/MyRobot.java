@@ -39,8 +39,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public final int ENEMY_CASTLE = 6;
 	public final int ENEMY_CHURCH = 7;
 	public int[][] knownStructures; // An array of size BOARD_SIZE*BOARD_SIZE storing the locations of known structures
-	public int[][] knownStructuresLastSeen; // the last round when this unit was seen
-	public int knownStructuresRunId;
+	public boolean[][] knownStructuresSeenBefore; // whether or not this structure is stored in the list below
 	public LinkedList<Integer> knownStructuresXCoords;
 	public LinkedList<Integer> knownStructuresYCoords;
 
@@ -76,9 +75,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			knownStructures = new int[BOARD_SIZE][BOARD_SIZE];
 			knownStructuresXCoords = new LinkedList<>();
 			knownStructuresYCoords = new LinkedList<>();
-			// note: default value of knownStructures elements is 0, which is
-			// NO_STRUCTURE anyway, so we don't have to do any init nice
-			knownStructuresLastSeen = new int[BOARD_SIZE][BOARD_SIZE];
+			knownStructuresSeenBefore = new boolean[BOARD_SIZE][BOARD_SIZE];
 			determineSymmetricOrientation();
 
 			hasInitialised = true;
@@ -178,58 +175,40 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Allows us to locate the nearest structure to deposit resources, or enemies to attack
 
 	public void updateStructureCache() { // Called at the start of every turn
-		// Iterates over all squares we can see to update the cache
-
 		// visibleRobots includes more stuff than visibleRobotMap; in particular,
 		// friendly castles, which is pretty desirable
-
-		// "clear" everything
-		knownStructuresRunId++;
 
 		int x = me.x;
 		int y = me.y;
 
-		for (Robot r : visibleRobots) {
-			// this is thoroughly, thoroughly screwed.
-			// i'm reasonably confident, when this transpiles to JS,
-			// that i or j being undefined will cause an array access at
-			// an undefined location ([j][i]), which will cause an error,
-			// thus jumping to the catch clause with no repercussions.
-			// would be nice if the devs figured out that you could redact
-			// information with -1s instead of deleting it from the object
-			// entirely... anyways
-			try {
-				int i = r.x;
-				int j = r.y;
+		for (Robot r : visibleRobots) if (isVisible(r)) {
+			int i = r.x;
+			int j = r.y;
 
-				if (r.unit == SPECS.CASTLE && r.team == me.team) {
-					knownStructures[j][i] = OUR_CASTLE;
-				} else if (r.unit == SPECS.CASTLE && r.team != me.team) {
-					knownStructures[j][i] = ENEMY_CASTLE;
-				} else if (r.unit == SPECS.CHURCH && r.team == me.team) {
-					knownStructures[j][i] = OUR_CHURCH;
-				} else if (r.unit == SPECS.CHURCH && r.team != me.team) {
-					knownStructures[j][i] = ENEMY_CHURCH;
-				}
-				if (knownStructures[j][i] != NO_STRUCTURE && knownStructuresLastSeen[j][i] == 0) { 
-					// First time we've seen this stucture, store its location
-					knownStructuresXCoords.add(i);
-					knownStructuresYCoords.add(j);
-				}
-
-				// Because of symmetry, we know a bit more
-				if 	(knownStructuresLastSeen[j][i] == 0 && // Only run this if its the first time we've seen this structure
-					((knownStructures[j][i] == OUR_CASTLE || knownStructures[j][i] == ENEMY_CASTLE) && SYMMETRY_STATUS != BOTH_SYMMETRICAL)) {
-					int sj = symmetricYCoord(j, SYMMETRY_STATUS), si = symmetricXCoord(i, SYMMETRY_STATUS);
-					knownStructures[sj][si] = knownStructures[j][i]^2;
-					knownStructuresLastSeen[sj][si] = knownStructuresRunId;
-				}
-
-				knownStructuresLastSeen[j][i] = knownStructuresRunId;
-
-			} catch (Exception e) {
-				continue;
+			if (r.unit == SPECS.CASTLE && r.team == me.team) {
+				knownStructures[j][i] = OUR_CASTLE;
+			} else if (r.unit == SPECS.CASTLE && r.team != me.team) {
+				knownStructures[j][i] = ENEMY_CASTLE;
+			} else if (r.unit == SPECS.CHURCH && r.team == me.team) {
+				knownStructures[j][i] = OUR_CHURCH;
+			} else if (r.unit == SPECS.CHURCH && r.team != me.team) {
+				knownStructures[j][i] = ENEMY_CHURCH;
 			}
+			if (knownStructures[j][i] != NO_STRUCTURE && !knownStructuresSeenBefore[j][i]) { 
+				// First time we've seen this stucture, store its location
+				knownStructuresXCoords.add(i);
+				knownStructuresYCoords.add(j);
+			}
+
+			// Because of symmetry, we know a bit more
+			if 	(!knownStructuresSeenBefore[j][i] && // Only run this if its the first time we've seen this structure
+				((knownStructures[j][i] == OUR_CASTLE || knownStructures[j][i] == ENEMY_CASTLE) && SYMMETRY_STATUS != BOTH_SYMMETRICAL)) {
+				int sj = symmetricYCoord(j, SYMMETRY_STATUS), si = symmetricXCoord(i, SYMMETRY_STATUS);
+				knownStructures[sj][si] = knownStructures[j][i]^2;
+				knownStructuresSeenBefore[sj][si] = true;
+			}
+
+			knownStructuresSeenBefore[j][i] = true;
 		}
 		// Iterate over all structures we have ever seen and remove them if we can see they are dead
 		Iterator<Integer> xiterator = knownStructuresXCoords.iterator();
@@ -240,7 +219,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int j = yiterator.next();
 			if (visibleRobotMap[j][i] == MAP_EMPTY) {
 				knownStructures[j][i] = NO_STRUCTURE;
-				knownStructuresLastSeen[j][i] = 0;
+				knownStructuresSeenBefore[j][i] = false;
+				xiterator.remove();
+				yiterator.remove();
 			}
 		}
 	}
