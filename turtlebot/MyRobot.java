@@ -248,10 +248,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (me.unit == SPECS.CASTLE) log("Error: Board is neither horizontally nor vertically symmetrical");
 		} else if (isHor) {
 			SYMMETRY_STATUS = HOR_SYMMETRICAL;
-			if (me.unit == SPECS.CASTLE) log("Board is horizontally symmetical");
+			if (me.unit == SPECS.CASTLE) log("Board is horizontally symmetrical");
 		} else {
 			SYMMETRY_STATUS = VER_SYMMETRICAL;
-			if (me.unit == SPECS.CASTLE) log("Board is verically symmetical");
+			if (me.unit == SPECS.CASTLE) log("Board is vertically symmetrical");
 		}
 	}
 
