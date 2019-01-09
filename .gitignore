@@ -51,7 +51,3 @@ tags
 
 # Compiled bots
 compiled_bot*.js
-
-# Submission files
-bc_username
-bc_password
