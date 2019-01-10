@@ -474,8 +474,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// it's either not visible (and hence must be on my team)
 					// or we can see it on our team
 					if (!isVisible(r) || r.team == me.team) {
-						int itsValue = communications.readCastle(r)&3;
-						if (itsValue != 0) {
+						int itsValue = communications.readCastle(r);
+						if (1 <= itsValue && itsValue <= 3) {
 							if ((itsValue%3+1) == smallestCastleValue || smallestCastleValue == -1) {
 								smallestCastleValue = itsValue;
 								smallestCastleId = r.id;
@@ -509,7 +509,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 							if (toBuild == SPECS.PROPHET || 
 								(MG_STATUS != MG_NO_MAGE_GROUP && MG_STATUS != MG_FINISHED)) {
-								myCastleTalk = (myCastleTalk&0b11111100) | ((myCastleTalk&3)%3+1);
+								myCastleTalk = myCastleTalk%3+1;
 							}
 							if (mnkarbonite == 0) {
 								// We constructed a unit for a mage group
