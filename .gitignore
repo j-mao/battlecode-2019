@@ -51,3 +51,6 @@ tags
 
 # Compiled bots
 compiled_bot*.js
+
+## For people who use a Mac grr
+.DS_Store
