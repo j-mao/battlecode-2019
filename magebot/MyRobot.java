@@ -302,19 +302,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Would have liked to make it a one time pad but turn numbers aren't in sync rip
 	private strictfp class Communicator {
 
-		private int cipherPad;
+		private final int RADIO_MAX = 1 << (SPECS.COMMUNICATION_BITS);
+		private final int RADIO_PAD = 0x420b1a3e % RADIO_MAX;
+		private final int CASTLE_MAX = 1 << (SPECS.CASTLE_TALK_BITS);
+		private final int CASTLE_PAD = 0x420b1a3e % CASTLE_MAX;
 
-		public Communicator() {
-			cipherPad = 0x420b1a3e;
-			cipherPad %= (1<<(SPECS.COMMUNICATION_BITS));
+		public int readRadio(Robot broadcaster) {
+			return broadcaster.signal
+				^ RADIO_PAD
+				^ (Math.abs(SimpleRandom.advance(broadcaster.id ^ broadcaster.signal_radius)) % RADIO_MAX);
 		}
 
-		public int readMessage(Robot broadcaster) {
-			return broadcaster.signal ^ cipherPad;
+		public void sendRadio(int value, int signalRadius) {
+			signal(value
+					^ RADIO_PAD
+					^ (Math.abs(SimpleRandom.advance(me.id ^ signalRadius)) % RADIO_MAX),
+				signalRadius);
 		}
 
-		public void sendMessage(int value, int signalRange) {
-			signal(value^cipherPad, signalRange);
+		public int readCastle(Robot broadcaster) {
+			// Prevent attempting to decode the void
+			if (broadcaster.turn == 0)
+				return 0;
+			return broadcaster.castle_talk
+				^ CASTLE_PAD
+				^ (Math.abs(SimpleRandom.advance(broadcaster.id)) % CASTLE_MAX);
+		}
+
+		public void sendCastle(int value) {
+			castleTalk(value
+					^ CASTLE_PAD
+					^ (Math.abs(SimpleRandom.advance(me.id)) % CASTLE_MAX));
 		}
 	}
 
@@ -349,7 +367,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = runSpecificTurn();
 
 			// keep castle talk up-to-date for free
-			castleTalk(myCastleTalk);
+			communications.sendCastle(myCastleTalk);
 
 			// return the result
 			return myAction;
@@ -384,8 +402,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int i = -3; i <= 3; i++) {
 				for (int j = -3; j <= 3; j++) {
 					if (inBounds(me.x+i, me.y+j)) {
-						if (visibleRobotMap[me.y+i][me.x+j] > 0) {
-							Robot r = getRobot(visibleRobotMap[me.y+i][me.x+j]);
+						if (visibleRobotMap[me.y+j][me.x+i] > 0) {
+							Robot r = getRobot(visibleRobotMap[me.y+j][me.x+i]);
 							if (r.team == me.team && r.unit == SPECS.PILGRIM) {
 								myPilgrims.add(r.id);
 							}
@@ -429,7 +447,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// it's either not visible (and hence must be on my team)
 					// or we can see it on our team
 					if (!isVisible(r) || r.team == me.team) {
-						int itsValue = r.castle_talk&3;
+						int itsValue = communications.readCastle(r)&3;
 						if (itsValue != 0) {
 							if ((itsValue%3+1) == smallestCastleValue || smallestCastleValue == -1) {
 								smallestCastleValue = itsValue;
@@ -473,7 +491,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 									MG_STATUS = MG_CREATED_0_PREACHERS;
 									log("Building pilgrim for magegroup");
 									int message = 1;
-									communications.sendMessage(message, dx[i]*dx[i] + dy[i]*dy[i]);
+									communications.sendRadio(message, dx[i]*dx[i] + dy[i]*dy[i]);
 								} else {
 									MG_STATUS++;
 									log("Building preacher for magegroup");
@@ -496,15 +514,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			// Call the inherited constructor
 			super();
 		}
-		public int isFirstTurn = 3;
 
 		// Checks whether a message has been recieved from a castle to lead a group of mages
-		public boolean checkForMageteamMessage()
+		private boolean checkForMageteamMessage()
 		{	
 			for (Robot robot : visibleRobots) {
 				if (isVisible(robot) && robot.unit == SPECS.CASTLE && robot.team == me.team) {
 					if (!isRadioing(robot)) continue;
-					int message = communications.readMessage(robot);
+					int message = communications.readRadio(robot);
 					if (message % 4 == 1) {
 						// Its important to check that no other pilgrim recieved this message
 						int mnturn = me.turn;
@@ -526,6 +543,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			return false;
 		}
+
 		public Action runSpecificTurn() throws BCException {
 
 			Action myAction = null;
@@ -546,8 +564,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// If its our first turn, do nothing because the message from the castle will take one turn to arrive
 			// So moving now could cause us to move out of range of it (obviously mining is fine to do)
-			if (isFirstTurn != 0) {
-				isFirstTurn--;
+			if (me.turn == 1) {
 				return myAction;
 			}
 
@@ -628,11 +645,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		// A preacher checking to see if a worker has 'claimed' it
-		public boolean preacherCheckForOwnershipClaim() {
-			if (me.unit != SPECS.PREACHER) return false;
+		private boolean preacherCheckForOwnershipClaim() {
 			for (Robot r : visibleRobots) {
 				if (isVisible(r) && isRadioing(r) && r.unit == SPECS.PILGRIM) {
-					int message = communications.readMessage(r);
+					int message = communications.readRadio(r);
 					if (message % 4 == 1) { 
 						// We have been claimed by a pilgrim, turn into an owned preacher
 						mySpecificRobotController = new OwnedPreacherController(r.id);
@@ -649,7 +665,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 			int x = me.x;
 			int y = me.y;
-			if (preacherCheckForOwnershipClaim()) {
+
+			if (me.unit == SPECS.PREACHER && preacherCheckForOwnershipClaim()) {
 				return mySpecificRobotController.runSpecificTurn();
 			}
 
@@ -731,13 +748,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Controls a preacher which has been 'claimed' by a pilgrim
 	private strictfp class OwnedPreacherController extends SpecificRobotController {
 
+		private int bossPilgrim = -1; // Id of the pilgrim that 'owns' us
+		// The squares we have been told to attack
+		private int attackX = -1, attackY = -1; 
+
 		// Initialise internal state
 		public OwnedPreacherController(int boss) {
 			// Call the inherited constructor
 			super();
 			bossPilgrim = boss;
 		}
-		public boolean attackIsNonSuicidal(int x, int y) {
+
+		private boolean attackIsNonSuicidal(int x, int y) {
 			for (int i = x-1; i <= x+1; i++) {
 				for (int j = y-1; j <= y+1; j++) {
 					if (inBounds(i, j) && visibleRobotMap[j][i] != MAP_EMPTY && visibleRobotMap[j][i] != MAP_INVISIBLE) {
@@ -750,21 +772,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return true;
 		}
 
-		public void checkForAttackMessage() { // Check whether our boss has sent a message to attack a square
+		private void checkForAttackMessage() { // Check whether our boss has sent a message to attack a square
 			Robot boss = getRobot(bossPilgrim);
 			if (boss != null && isVisible(boss) && isRadioing(boss)) {
-				int message = communications.readMessage(boss);
+				int message = communications.readRadio(boss);
 				if (message % 4 == 3) {
 					// Bits 2 ... 7 hold the x-coord, 8 ... 13 hold the y-coord
 					attackX = (message >> 2) % 64;
 					attackY = (message >> 8) % 64;
-					log("Preacher has been depolyed to attack " + Integer.toString(attackX) + " " + Integer.toString(attackY));
+					log("Preacher has been deployed to attack " + Integer.toString(attackX) + " " + Integer.toString(attackY));
 				}
 			}
 		}
-		public int bossPilgrim = -1; // Id of the pilgrim that 'owns' us
-		// The squares we have been told to attack
-		public int attackX = -1, attackY = -1; 
 
 		public Action runSpecificTurn() throws BCException {
 			Action myAction = null;
@@ -863,6 +882,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Controls a pilgrim which owns some number of preachers
 	private strictfp class BossPilgrimController extends SpecificRobotController {
 
+		private boolean deployedPreachers = false;
+		private List<Integer> ownedPreachers;
+
 		// Initialise internal state
 		public BossPilgrimController() {
 			// Call the inherited constructor
@@ -870,11 +892,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			ownedPreachers = new LinkedList<>();
 		}
 
-		public boolean deployedPreachers = false;
-
-		LinkedList<Integer> ownedPreachers;
-
-		public int checkForUnownedPreacher() {
+		private int checkForUnownedPreacher() {
 			if (ownedPreachers.size() >= PREACHERS_IN_MG) return 0;
 			int x = me.x;
 			int y = me.y;
@@ -901,6 +919,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			return messageDis;
 		}
+
 		public Action runSpecificTurn() throws BCException {
 
 			Action myAction = null;
@@ -909,7 +928,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int messageDis = checkForUnownedPreacher();
 			if (messageDis != 0) { 
 				// Send a message to claim this preacher
-				communications.sendMessage(1, messageDis);
+				communications.sendRadio(1, messageDis);
 			} else if (ownedPreachers.size() >= PREACHERS_IN_MG && !deployedPreachers) {
 				// BFS towards enemy location
 				int bestDx = 0, bestDy = 0;
@@ -951,7 +970,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						}
 					}
 				}
-			//	log("bfsing to enemy! " + Integer.toString(bestDx) + " " + Integer.toString(bestDy) + " turn " + Integer.toString(me.turn));
+
 				int newx = x+bestDx, newy = y+bestDy;
 				if (inBounds(newx, newy) &&
 					map[newy][newx] == MAP_PASSABLE &&
@@ -987,7 +1006,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							int message = 3;
 							message += (closestx << 2);
 							message += (closesty << 8);
-							communications.sendMessage(message, furtherestPreacher);
+							communications.sendRadio(message, furtherestPreacher);
 							deployedPreachers = true;
 							return myAction;
 						}
@@ -1025,7 +1044,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			
 			return myAction;
 		}
 	}
