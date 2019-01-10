@@ -389,8 +389,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int i = -3; i <= 3; i++) {
 				for (int j = -3; j <= 3; j++) {
 					if (inBounds(me.x+i, me.y+j)) {
-						if (visibleRobotMap[me.y+i][me.x+j] > 0) {
-							Robot r = getRobot(visibleRobotMap[me.y+i][me.x+j]);
+						if (visibleRobotMap[me.y+j][me.x+i] > 0) {
+							Robot r = getRobot(visibleRobotMap[me.y+j][me.x+i]);
 							if (r.team == me.team && r.unit == SPECS.PILGRIM) {
 								myPilgrims.add(r.id);
 							}
