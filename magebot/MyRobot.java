@@ -60,7 +60,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Reserves of fuel
 	public final int MINIMUM_FUEL = 100; // Treat this value as if it were 0, unless the action is deemed important enough
-	public final int MINIMUM_KARBONITE = 30; // Treat this value as if it were 0, unless the action is deemed important enough
+	public final int MINIMUM_KARBONITE = 0; // Treat this value as if it were 0, unless the action is deemed important enough
 
 	// Number of preachers (mages) per group
 	public final int PREACHERS_IN_MG = 2;
@@ -511,7 +511,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								(MG_STATUS != MG_NO_MAGE_GROUP && MG_STATUS != MG_FINISHED)) {
 								myCastleTalk = myCastleTalk%3+1;
 							}
-							if (mnkarbonite == 0) {
+							if (MG_STATUS != MG_NO_MAGE_GROUP && MG_STATUS != MG_FINISHED) {
 								// We constructed a unit for a mage group
 								// If its a pilgrim, notify it that it now controls a group.
 								if (MG_STATUS == MG_BEGINNING_CREATION) {
@@ -519,7 +519,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 									log("Building pilgrim for magegroup");
 									int message = 1;
 									communications.sendRadio(message, dx[i]*dx[i] + dy[i]*dy[i]);
-								} else {
+								} else if (toBuild == SPECS.PREACHER) {
 									MG_STATUS++;
 									log("Building preacher for magegroup");
 									if (MG_STATUS == MG_CREATED_0_PREACHERS + PREACHERS_IN_MG) MG_STATUS = MG_FINISHED;
@@ -861,15 +861,39 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
+			if (myAction == null && ((getRobot(bossPilgrim) != null && isVisible(getRobot(bossPilgrim)) && attackX == -1))) {
+				// We want to follow the pilgrim that controls us, so go to the square that makes us as close to them as possible
+				Robot boss = getRobot(bossPilgrim);
+				int targetx = boss.x, targety = boss.y;
 
-			if (myAction == null && ((getRobot(bossPilgrim) != null && isVisible(getRobot(bossPilgrim)) && attackX == -1) || (attackX != -1 && attackY != -1 && movesUntilAttack == 0))) {
+				int bestDx = 0, bestDy = 0;
+				int bestDistance = 420;
+				
+				for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
+					if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED && 
+						inBounds(x+_dx, y+_dy) &&
+						map[y+_dy][x+_dx] == MAP_PASSABLE && 
+						visibleRobotMap[y+_dy][x+_dx] == MAP_EMPTY) {
+						int d = pythagoras(x+_dx - targetx, y+_dy - targety);
+						if (d < bestDistance) {
+							bestDistance = d;
+							bestDx = _dx;
+							bestDy = _dy;
+						}
+					}
+				}
+				int newx = x+bestDx, newy = y+bestDy;
+				if (inBounds(newx, newy) &&
+					map[newy][newx] == MAP_PASSABLE &&
+					visibleRobotMap[newy][newx] == MAP_EMPTY &&
+					fuel - (bestDx*bestDx + bestDy*bestDy) * SPECS.UNITS[me.unit].FUEL_PER_MOVE >= 0) {
+					myAction = move(bestDx, bestDy);
+				}
+			} else if (myAction == null && (attackX != -1 && attackY != -1 && movesUntilAttack == 0)) {
 				// We walk to end up as close to bossPilgrim as possible
 				int targetx = 0, targety = 0;
 				if (attackX != -1 && attackY != -1) {
 					targetx = attackX; targety = attackY;
-				} else {
-					Robot boss = getRobot(bossPilgrim);
-					targetx = boss.x; targety = boss.y;
 				}
 
 				int bestDx = 0, bestDy = 0;
@@ -941,6 +965,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				movesUntilAttack--;
 				int bestDx = 0, bestDy = 0;
 				int bestDistance = 420;
+				int bestPythag = 420;
 				for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
 					if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED && 
 						inBounds(x+_dx, y+_dy) &&
@@ -948,8 +973,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						visibleRobotMap[y+_dy][x+_dx] == MAP_EMPTY && 
 						bfsDisFromTarget[y+_dy][x+_dx] != 0){
 						int d = pythagoras(x+_dx - attackX, y+_dy - attackY);
-						if (bfsDisFromTarget[y+_dy][x+_dx] < bestDistance && d > SPECS.UNITS[SPECS.PROPHET].ATTACK_RADIUS[1]) {
+						if ((bfsDisFromTarget[y+_dy][x+_dx] < bestDistance || 
+							(bfsDisFromTarget[y+_dy][x+_dx] == bestDistance && d < bestPythag)) && 
+							d > SPECS.UNITS[SPECS.PROPHET].ATTACK_RADIUS[1]) {
 							bestDistance = bfsDisFromTarget[y+_dy][x+_dx];
+							bestPythag = d;
 							bestDx = _dx;
 							bestDy = _dy;
 						}
@@ -1036,7 +1064,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				while (!qX.isEmpty()) {
 					int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
 
-					if (isEnemyStructure(ux, uy) || isEnemyUnit(visibleRobotMap[uy][ux])) {
+					if (isEnemyStructure(ux, uy) || 
+						(isEnemyUnit(visibleRobotMap[uy][ux]) && getRobot(visibleRobotMap[uy][ux]).unit != SPECS.PILGRIM)) {
+
 						bestDx = udx;
 						bestDy = udy;
 						break;
@@ -1073,7 +1103,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// Check if this move would make us within 64 of the enemy
 					int closestx = -1, closesty = -1, closestenemy = 420;
 					for (Robot robot : visibleRobots) {
-						if (isVisible(robot) && robot.team != me.team) {
+						if (isVisible(robot) && robot.team != me.team && robot.unit != SPECS.PILGRIM) {
 							int dis = (newx-robot.x)*(newx-robot.x) + (newy-robot.y)*(newy-robot.y);
 							if (dis < closestenemy) {
 								closestenemy = dis;
