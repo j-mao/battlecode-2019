@@ -28,6 +28,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public Robot[] visibleRobots;
 	public int[][] visibleRobotMap;
 
+	// Dangerous cells: use only if noteDangerousCells is called this round
+	public int[][] isDangerous;
+	public int isDangerousRunId;
+
 	// Tools
 	public int[][] bfsVisited;
 	public int bfsRunId;
@@ -78,6 +82,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			knownStructuresXCoords = new LinkedList<>();
 			knownStructuresYCoords = new LinkedList<>();
 			knownStructuresSeenBefore = new boolean[BOARD_SIZE][BOARD_SIZE];
+			isDangerous = new int[BOARD_SIZE][BOARD_SIZE];
 			determineSymmetricOrientation();
 
 			// Constructor for these specific classes may use variables from above
@@ -207,6 +212,28 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 		return myAction;
+	}
+
+	public void noteDangerousCells() {
+		isDangerousRunId++;
+
+		for (Robot r: visibleRobots) {
+			if (isVisible(r) && r.team != me.team) {
+				if (SPECS.UNITS[r.unit].ATTACK_RADIUS != null) {
+					int maxDisplacement = (int)Math.round(Math.sqrt(SPECS.UNITS[r.unit].ATTACK_RADIUS[1]));
+					for (int i = -maxDisplacement; i <= maxDisplacement; i++) {
+						for (int j = -maxDisplacement; j <= maxDisplacement; j++) {
+							if (inBounds(r.x+i, r.y+j)) {
+								if (pythagoras(i, j) >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0] &&
+									pythagoras(i, j) <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]) {
+									isDangerous[r.y+j][r.x+i] = isDangerousRunId;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	///////// Storing known structure locations /////////
@@ -553,6 +580,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				return mySpecificRobotController.runSpecificTurn();
 			}
 
+			noteDangerousCells();
+
 			if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
 				myAction = tryToGiveTowardsLocation(myHomeX, myHomeY);
 			}
@@ -595,7 +624,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
 						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
 							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
-								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE) {
+								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE && isDangerous[uy+_dy][ux+_dx] != isDangerousRunId) {
 									// We can only give to adjacent squares, so the last movement we make towards a castle must be to an adj square
 									if (isFriendlyStructure(ux+_dx, uy+_dy) && _dx*_dx+_dy*_dy > 2) continue;
 									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
