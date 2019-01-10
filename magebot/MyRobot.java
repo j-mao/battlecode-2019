@@ -774,12 +774,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int bossPilgrim = -1; // Id of the pilgrim that 'owns' us
 		// The squares we have been told to attack
 		private int attackX = -1, attackY = -1; 
-
+		private int movesUntilAttack = 4;
+		private int bfsDisFromTarget[][];
 		// Initialise internal state
 		public OwnedPreacherController(int boss) {
 			// Call the inherited constructor
 			super();
 			bossPilgrim = boss;
+			bfsDisFromTarget = new int[BOARD_SIZE][BOARD_SIZE];
 		}
 
 		private boolean attackIsNonSuicidal(int x, int y) {
@@ -804,6 +806,40 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					attackX = (message >> 2) % 64;
 					attackY = (message >> 8) % 64;
 					log("Preacher has been deployed to attack " + Integer.toString(attackX) + " " + Integer.toString(attackY));
+
+					// Now, we run a bfs to calculate the distance from our target square to every other square
+					// This is used later to determine where to position ourselves immediately prior to our attack
+					Queue<Integer> qX = new LinkedList<>();
+					Queue<Integer> qY = new LinkedList<>();
+					Queue<Integer> qDx = new LinkedList<>();
+					Queue<Integer> qDy = new LinkedList<>();
+					qX.add(attackX); qY.add(attackY); qDx.add(0); qDy.add(0);
+					bfsResetVisited();
+					bfsVisited[attackY][attackX] = bfsRunId;
+					bfsDisFromTarget[attackY][attackX] = 0;
+
+					while (!qX.isEmpty()) {
+						int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
+						for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
+							if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
+								if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
+									if (map[uy+_dy][ux+_dx] == MAP_PASSABLE) {
+										bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
+										bfsDisFromTarget[uy+_dy][ux+_dx] = bfsDisFromTarget[uy][ux]+1;
+										qX.add(ux+_dx);
+										qY.add(uy+_dy);
+										if (udx == 0 && udy == 0) {
+											qDx.add(_dx);
+											qDy.add(_dy);
+										} else {
+											qDx.add(udx);
+											qDy.add(udy);
+										}
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -826,7 +862,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			if (myAction == null && ((getRobot(bossPilgrim) != null && isVisible(getRobot(bossPilgrim))) || (attackX != -1 && attackY != -1))) {
+			if (myAction == null && ((getRobot(bossPilgrim) != null && isVisible(getRobot(bossPilgrim)) && attackX == -1) || (attackX != -1 && attackY != -1 && movesUntilAttack == 0))) {
 				// We walk to end up as close to bossPilgrim as possible
 				int targetx = 0, targety = 0;
 				if (attackX != -1 && attackY != -1) {
@@ -864,6 +900,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
 							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
 								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE) {
+									if (udx == 0 && udy == 0 && visibleRobotMap[uy+_dy][ux+_dx] > 0 && 
+										getRobot(visibleRobotMap[uy+_dy][ux+_dx]).unit == SPECS.PREACHER) {
+										continue; // Very specific breaking case, but helps to avoid magegroups getting stuck in tight spaces
+									}
 									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
 									qX.add(ux+_dx);
 									qY.add(uy+_dy);
@@ -886,8 +926,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (attackX != -1) { 
 					minfuel = 0; // If we are rushing for an attack, we can consume the spare fuel 
 				}
-				if (attackX == -1 || disToTarget > 2) {
-					int newx = x+bestDx, newy = y+bestDy;
+				int newx = x+bestDx, newy = y+bestDy;
+				if (attackX != -1 || disToTarget <= SPECS.UNITS[me.unit].VISION_RADIUS) {
 					if (inBounds(newx, newy) &&
 						map[newy][newx] == MAP_PASSABLE &&
 						visibleRobotMap[newy][newx] == MAP_EMPTY &&
@@ -896,7 +936,33 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
-			else { 
+			else if (myAction == null && attackX != -1 && attackY != -1) { 
+				// Move to a square which has the closest distance to the enemy, without going into their range
+				movesUntilAttack--;
+				int bestDx = 0, bestDy = 0;
+				int bestDistance = 420;
+				for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
+					if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED && 
+						inBounds(x+_dx, y+_dy) &&
+						map[y+_dy][x+_dx] == MAP_PASSABLE && 
+						visibleRobotMap[y+_dy][x+_dx] == MAP_EMPTY && 
+						bfsDisFromTarget[y+_dy][x+_dx] != 0){
+						int d = pythagoras(x+_dx - attackX, y+_dy - attackY);
+						if (bfsDisFromTarget[y+_dy][x+_dx] < bestDistance && d > SPECS.UNITS[SPECS.PROPHET].ATTACK_RADIUS[1]) {
+							bestDistance = bfsDisFromTarget[y+_dy][x+_dx];
+							bestDx = _dx;
+							bestDy = _dy;
+						}
+					}
+				}
+				int newx = x+bestDx, newy = y+bestDy;
+				if (inBounds(newx, newy) &&
+					map[newy][newx] == MAP_PASSABLE &&
+					visibleRobotMap[newy][newx] == MAP_EMPTY &&
+					fuel - (bestDx*bestDx + bestDy*bestDy) * SPECS.UNITS[me.unit].FUEL_PER_MOVE >= 0) {
+					myAction = move(bestDx, bestDy);
+				}
+			} else if (myAction == null) { 
 				// Owner is dead, reassign as DefenderController
 				mySpecificRobotController = new DefenderController();
 				return mySpecificRobotController.runSpecificTurn();
