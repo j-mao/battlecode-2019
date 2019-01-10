@@ -591,12 +591,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = mine();
 			}
 
-			// If its our first turn, do nothing because the message from the castle will take one turn to arrive
-			// So moving now could cause us to move out of range of it (obviously mining is fine to do)
-			if (me.turn == 1) {
-				return myAction;
-			}
-
 			if (myAction == null) {
 				// Pathfind to nearest unoccupied resource, or a structure to deposit our resources
 				int bestDx = 0, bestDy = 0;
@@ -902,7 +896,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
-			else { } // TODO: Something when our owner is dead and we have no purpose
+			else { 
+				// Owner is dead, reassign as DefenderController
+				mySpecificRobotController = new DefenderController();
+				return mySpecificRobotController.runSpecificTurn();
+			}
 
 			return myAction;
 		}
