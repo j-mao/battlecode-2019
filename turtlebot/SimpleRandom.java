@@ -16,10 +16,15 @@ public class SimpleRandom {
 		state = seed;
 	}
 
+	public static int advance(int value) {
+		value ^= (value << 13);
+		value ^= (value >> 17);
+		value ^= (value << 5);
+		return value;
+	}
+
 	public int nextInt() { 
-		state ^= (state << 13);
-		state ^= (state >> 17);
-		state ^= (state << 5);
+		state = advance(state);
 		return Math.abs(state);
 	}
 }

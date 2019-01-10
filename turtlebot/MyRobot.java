@@ -295,19 +295,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Would have liked to make it a one time pad but turn numbers aren't in sync rip
 	private strictfp class Communicator {
 
-		private int cipherPad;
+		private final int RADIO_MAX = 1 << (SPECS.COMMUNICATION_BITS);
+		private final int RADIO_PAD = 0x420b1a3e % RADIO_MAX;
+		private final int CASTLE_MAX = 1 << (SPECS.CASTLE_TALK_BITS);
+		private final int CASTLE_PAD = 0x420b1a3e % CASTLE_MAX;
 
-		public Communicator() {
-			cipherPad = 0x420b1a3e;
-			cipherPad %= (1<<(SPECS.COMMUNICATION_BITS));
+		public int readRadio(Robot broadcaster) {
+			return broadcaster.signal
+				^ RADIO_PAD
+				^ (Math.abs(SimpleRandom.advance(broadcaster.id ^ broadcaster.signal_radius)) % RADIO_MAX);
 		}
 
-		public int readMessage(Robot broadcaster) {
-			return broadcaster.signal ^ cipherPad;
+		public void sendRadio(int value, int signalRadius) {
+			signal(value
+					^ RADIO_PAD
+					^ (Math.abs(SimpleRandom.advance(me.id ^ signalRadius)) % RADIO_MAX),
+				signalRadius);
 		}
 
-		public void sendMessage(int value, int signalRange) {
-			signal(value^cipherPad, signalRange);
+		public int readCastle(Robot broadcaster) {
+			// Prevent attempting to decode the void
+			if (broadcaster.turn == 0)
+				return 0;
+			return broadcaster.castle_talk
+				^ CASTLE_PAD
+				^ (Math.abs(SimpleRandom.advance(broadcaster.id)) % CASTLE_MAX);
+		}
+
+		public void sendCastle(int value) {
+			castleTalk(value
+					^ CASTLE_PAD
+					^ (Math.abs(SimpleRandom.advance(me.id)) % CASTLE_MAX));
 		}
 	}
 
@@ -342,7 +360,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = runSpecificTurn();
 
 			// keep castle talk up-to-date for free
-			castleTalk(myCastleTalk);
+			communications.sendCastle(myCastleTalk);
 
 			// return the result
 			return myAction;
@@ -407,7 +425,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// it's either not visible (and hence must be on my team)
 					// or we can see it on our team
 					if (!isVisible(r) || r.team == me.team) {
-						int itsValue = r.castle_talk&3;
+						int itsValue = communications.readCastle(r)&3;
 						if (itsValue != 0) {
 							if ((itsValue%3+1) == smallestCastleValue || smallestCastleValue == -1) {
 								smallestCastleValue = itsValue;
