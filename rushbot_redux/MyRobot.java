@@ -541,9 +541,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 
+				myCastleTalk = 1;
 				if (!isItMe) {
 					preacherBuildDir = -1;
-					myCastleTalk = 1;
 					return null;
 				}
 
