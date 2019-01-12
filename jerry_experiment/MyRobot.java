@@ -35,10 +35,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	public int[][] isDangerous;
 	public int isDangerousRunId;
 
-	// Tools
-	public int[][] bfsVisited;
-	public int bfsRunId;
-
 	// Storing locations of known structures
 	public final int NO_STRUCTURE = 0;
 	public final int OUR_CASTLE = 4;
@@ -60,6 +56,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private SpecificRobotController mySpecificRobotController;
 	private boolean hasInitialised;
 	private Communicator communications;
+	private BfsSolver myBfsSolver;
 
 	public Action turn() {
 
@@ -72,8 +69,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		if (!hasInitialised) {
 			BOARD_SIZE = map.length;
 			rng = new SimpleRandom();
-			bfsVisited = new int[BOARD_SIZE][BOARD_SIZE];
 			communications = new Communicator();
+			myBfsSolver = new BfsSolver();
 			knownStructures = new int[BOARD_SIZE][BOARD_SIZE];
 			knownStructuresXCoords = new LinkedList<>();
 			knownStructuresYCoords = new LinkedList<>();
@@ -135,10 +132,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	public int distanceSquared(Robot r1, Robot r2) {
 		return pythagoras(r1.x-r2.x, r1.y-r2.y);
-	}
-
-	public void bfsResetVisited() {
-		bfsRunId++;
 	}
 
 	public boolean isStructure(int unitType) {
@@ -488,6 +481,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				preacherEnemyX = symmetricXCoord(me.x, SYMMETRY_STATUS==BOTH_SYMMETRICAL?HOR_SYMMETRICAL:SYMMETRY_STATUS);
 				preacherEnemyY = symmetricYCoord(me.y, SYMMETRY_STATUS==BOTH_SYMMETRICAL?HOR_SYMMETRICAL:SYMMETRY_STATUS);
 
+				int[][] bfsVisited = new int[BOARD_SIZE][BOARD_SIZE];
+
 				for (int i = 0; i < BOARD_SIZE; i++) for (int j = 0; j < BOARD_SIZE; j++) {
 					bfsVisited[j][i] = 4095;
 				}
@@ -548,7 +543,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 
-				bfsRunId = 5000;
 				return null;
 
 			} else if (me.turn == 2 && myCastleTalk >= MSG_OFFSET) {
@@ -746,51 +740,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				// Pathfind to nearest unoccupied resource, or a structure to deposit our resources
-				int bestDx = 0, bestDy = 0;
-
-				Queue<Integer> qX = new LinkedList<>();
-				Queue<Integer> qY = new LinkedList<>();
-				Queue<Integer> qDx = new LinkedList<>();
-				Queue<Integer> qDy = new LinkedList<>();
-				qX.add(x); qY.add(y); qDx.add(0); qDy.add(0);
-				bfsResetVisited();
-				bfsVisited[y][x] = bfsRunId;
-
-				while (!qX.isEmpty()) {
-					int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
-					if ((visibleRobotMap[uy][ux] <= 0 && karboniteMap[uy][ux] && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
-						(visibleRobotMap[uy][ux] <= 0 && fuelMap[uy][ux] && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && karbonite > 0) ||
-						(isFriendlyStructure(ux, uy) && (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY))) {
-						bestDx = udx;
-						bestDy = udy;
-						break;
-					}
-					if (visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y)) {
-						continue;
-					}
-					for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
-						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
-							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
-								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE && isDangerous[uy+_dy][ux+_dx] != isDangerousRunId) {
-									// We can only give to adjacent squares, so the last movement we make towards a castle must be to an adj square
-									if (isFriendlyStructure(ux+_dx, uy+_dy) && _dx*_dx+_dy*_dy > 2) continue;
-									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
-									qX.add(ux+_dx);
-									qY.add(uy+_dy);
-									if (udx == 0 && udy == 0) {
-										qDx.add(_dx);
-										qDy.add(_dy);
-									} else {
-										qDx.add(udx);
-										qDy.add(udy);
-									}
-								}
-							}
+				Direction bestDir = myBfsSolver.solve(x, y, 2, SPECS.UNITS[me.unit].SPEED,
+					(ux, uy)->{
+						if (visibleRobotMap[uy][ux] <= 0 &&
+							karboniteMap[uy][ux] &&
+							me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
+							return true;
 						}
-					}
-				}
+						if (visibleRobotMap[uy][ux] <= 0 &&
+							fuelMap[uy][ux] &&
+							me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && karbonite > 0) {
+							return true;
+						}
+						if (isFriendlyStructure(ux, uy) &&
+							(me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
+								me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY)) {
+							return true;
+						}
+						return false;
+					},
+					(ux, uy)->{ return visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y); },
+					(ux, uy)->{ return map[uy][ux] == MAP_PASSABLE && isDangerous[uy][ux] != isDangerousRunId; });
 
-				if (bestDx == 0 && bestDy == 0) {
+				int bestDx = bestDir.x, bestDy = bestDir.y;
+
+				if (bestDir.isNull()) {
 					int randDir = rng.nextInt()%8;
 					bestDx = dx[randDir];
 					bestDy = dy[randDir];
@@ -890,45 +864,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null && !isGoodTurtlingLocation(x, y)) {
 				// Pathfind to closest good turtling location
-				int bestDx = 0, bestDy = 0;
+				Direction bestDir = myBfsSolver.solve(x, y, 2, SPECS.UNITS[me.unit].SPEED,
+					(ux, uy)->{
+						return !(visibleRobotMap[uy][ux] > 0 &&
+								(ux != x || uy != y)) &&
+							isGoodTurtlingLocation(ux, uy);
+					},
+					(ux, uy)->{ return visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y); },
+					(ux, uy)->{ return map[uy][ux] == MAP_PASSABLE; });
 
-				Queue<Integer> qX = new LinkedList<>();
-				Queue<Integer> qY = new LinkedList<>();
-				Queue<Integer> qDx = new LinkedList<>();
-				Queue<Integer> qDy = new LinkedList<>();
-				qX.add(x); qY.add(y); qDx.add(0); qDy.add(0);
-				bfsResetVisited();
-				bfsVisited[y][x] = bfsRunId;
-
-				while (!qX.isEmpty()) {
-					int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
-					if (visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y)) {
-						continue;
-					}
-					if (isGoodTurtlingLocation(ux, uy)) {
-						bestDx = udx;
-						bestDy = udy;
-						break;
-					}
-					for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
-						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
-							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
-								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE) {
-									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
-									qX.add(ux+_dx);
-									qY.add(uy+_dy);
-									if (udx == 0 && udy == 0) {
-										qDx.add(_dx);
-										qDy.add(_dy);
-									} else {
-										qDx.add(udx);
-										qDy.add(udy);
-									}
-								}
-							}
-						}
-					}
-				}
+				int bestDx = bestDir.x, bestDy = bestDir.y;
 
 				if (bestDx == 0 && bestDy == 0) {
 					int randDir = rng.nextInt()%8;
@@ -996,46 +941,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				// Pathfind to nearest enemy
-				int bestDx = 0, bestDy = 0;
+				Direction bestDir = myBfsSolver.solve(x, y, 2, SPECS.UNITS[me.unit].SPEED,
+					(ux, uy)->{
+						return !(visibleRobotMap[uy][ux] > 0 &&
+								(ux != x || uy != y)) &&
+							pythagoras(ux-myTargetX, uy-myTargetY) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
+							pythagoras(ux-myTargetX, uy-myTargetY) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1];
+					},
+					(ux, uy)->{ return visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y); },
+					(ux, uy)->{ return map[uy][ux] == MAP_PASSABLE; });
 
-				Queue<Integer> qX = new LinkedList<>();
-				Queue<Integer> qY = new LinkedList<>();
-				Queue<Integer> qDx = new LinkedList<>();
-				Queue<Integer> qDy = new LinkedList<>();
-				qX.add(x); qY.add(y); qDx.add(0); qDy.add(0);
-				bfsResetVisited();
-				bfsVisited[y][x] = bfsRunId;
-
-				while (!qX.isEmpty()) {
-					int ux = qX.poll(), uy = qY.poll(), udx = qDx.poll(), udy = qDy.poll();
-					if (visibleRobotMap[uy][ux] > 0 && (ux != x || uy != y)) {
-						continue;
-					}
-					if (pythagoras(ux-myTargetX, uy-myTargetY) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
-						pythagoras(ux-myTargetX, uy-myTargetY) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
-						bestDx = udx;
-						bestDy = udy;
-						break;
-					}
-					for (int _dx = -maxDispl; _dx <= maxDispl; _dx++) for (int _dy = -maxDispl; _dy <= maxDispl; _dy++) {
-						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
-							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
-								if (map[uy+_dy][ux+_dx] == MAP_PASSABLE) {
-									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
-									qX.add(ux+_dx);
-									qY.add(uy+_dy);
-									if (udx == 0 && udy == 0) {
-										qDx.add(_dx);
-										qDy.add(_dy);
-									} else {
-										qDx.add(udx);
-										qDy.add(udy);
-									}
-								}
-							}
-						}
-					}
-				}
+				int bestDx = bestDir.x, bestDy = bestDir.y;
 
 				if (bestDx == 0 && bestDy == 0) {
 					int randDir = rng.nextInt()%8;
@@ -1051,6 +967,87 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return myAction;
+		}
+	}
+
+	public class Direction {
+
+		public int x, y;
+
+		public Direction() {
+			this(0, 0);
+		}
+
+		public Direction(int valueX, int valueY) {
+			x = valueX;
+			y = valueY;
+		}
+
+		public boolean isNull() {
+			return x == 0 && y == 0;
+		}
+	}
+
+	private class BfsSolver {
+
+		private int[][] bfsVisited;
+		private int bfsRunId;
+
+		public BfsSolver() {
+			bfsVisited = new int[BOARD_SIZE][BOARD_SIZE];
+		}
+
+		/**
+		 * This bfs function should hopefully be self-explanatory
+		 * @param objectiveCondition Bfs destination checker. Warning: not sanitised against skipCondition
+		 * @param skipCondition Which states not to expand from. Warning: not used to sanitise destinations
+		 * @param visitCondition Which states to visit and therefore add to the queue
+		 * @return The best direction in which to go, or null if solution not found
+		 */
+		public Direction solve(int sourceX, int sourceY, int maxLinearDispl, int maxSpeed,
+			java.util.function.BiFunction<Integer, Integer, Boolean> objectiveCondition,
+			java.util.function.BiFunction<Integer, Integer, Boolean> skipCondition,
+			java.util.function.BiFunction<Integer, Integer, Boolean> visitCondition) {
+
+			bfsRunId++;
+
+			Queue<Integer> qX = new LinkedList<>();
+			Queue<Integer> qY = new LinkedList<>();
+			Queue<Direction> qD = new LinkedList<>();
+
+			qX.add(sourceX); qY.add(sourceY); qD.add(new Direction());
+			bfsVisited[sourceY][sourceX] = bfsRunId;
+
+			while (!qX.isEmpty()) {
+				int ux = qX.poll(), uy = qY.poll();
+				Direction ud = qD.poll();
+				if (objectiveCondition.apply(ux, uy)) {
+					return ud;
+				}
+				if (skipCondition.apply(ux, uy)) {
+					continue;
+				}
+				for (int _dx = -maxLinearDispl; _dx <= maxLinearDispl; _dx++) {
+					for (int _dy = -maxLinearDispl; _dy <= maxLinearDispl; _dy++) {
+						if (_dx*_dx+_dy*_dy <= maxSpeed) {
+							if (inBounds(ux+_dx, uy+_dy) && bfsVisited[uy+_dy][ux+_dx] != bfsRunId) {
+								if (visitCondition.apply(ux+_dx, uy+_dy)) {
+									bfsVisited[uy+_dy][ux+_dx] = bfsRunId;
+									qX.add(ux+_dx);
+									qY.add(uy+_dy);
+									if (ud.isNull()) {
+										qD.add(new Direction(_dx, _dy));
+									} else {
+										qD.add(ud);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			return new Direction();
 		}
 	}
 }
