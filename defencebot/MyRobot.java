@@ -474,7 +474,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				// By checking if no other units have sent a 1 castletalk
 				amFirstCastle = true;
 				for (Robot robot : visibleRobots) {
-					if (communications.readCastle(robot) == 1) { 
+					if (communications.readCastle(robot) != 0) { 
 						amFirstCastle = false;
 					}
 				}
