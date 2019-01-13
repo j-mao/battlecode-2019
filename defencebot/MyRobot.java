@@ -237,6 +237,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								if (pythagoras(i, j) >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0] &&
 									pythagoras(i, j) <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]) {
 									isDangerous[r.y+j][r.x+i] = isDangerousRunId;
+									if (visibleRobotMap[r.y+j][r.x+i] > 0 && 
+										r.unit == SPECS.PREACHER) {
+										// Because of splash, all squares next to this are also dangerous
+										for (int dir = 0; dir < 8; dir++) {
+											if (inBounds(r.x+i+dx[dir], r.y+j+dy[dir])) {
+												isDangerous[r.y+j+dy[dir]][r.x+i+dx[dir]] = isDangerousRunId;
+											}
+										}
+									}
 								}
 							}
 						}
@@ -554,12 +563,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			noteDangerousCells();
 
-			if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
+			if ((me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) &&
+				isDangerous[y][x] != isDangerousRunId)
+			{
 				myAction = tryToGiveTowardsLocation(myHomeX, myHomeY);
 			}
 
 			if (myAction == null &&
-				((karboniteMap[y][x] && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) /*|| (fuelMap[y][x] && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY)*/)) { // Mine karbonite
+				((karboniteMap[y][x] && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) /*|| (fuelMap[y][x] && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY)*/) &&
+				isDangerous[y][x] != isDangerousRunId) { // Mine karbonite
 				myAction = mine();
 			}
 
@@ -611,9 +623,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 
 				if (bestDx == 0 && bestDy == 0) {
-					int randDir = rng.nextInt()%8;
-					bestDx = dx[randDir];
-					bestDy = dy[randDir];
+					// Walk in a direction that will make us not die
+					for (int _dx = -2; _dx <= 2; _dx++) for (int _dy = -2; _dy <= 2; _dy++) {
+						if (_dx*_dx+_dy*_dy <= SPECS.UNITS[me.unit].SPEED) {
+							if (inBounds(x+_dx, y+_dy)) { 
+								if (map[y+_dy][x+_dx] == MAP_PASSABLE && isDangerous[y+_dy][x+_dx] != isDangerousRunId) {
+									bestDx = _dx;
+									bestDy = _dy;
+									break;
+								}
+							}
+						}
+					}
 				}
 				int newx = x+bestDx, newy = y+bestDy;
 				if (inBounds(newx, newy) &&
