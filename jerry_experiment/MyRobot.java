@@ -89,6 +89,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				mySpecificRobotController = new DefenderController();
 			} else if (me.unit == SPECS.PREACHER) {
 				mySpecificRobotController = new DefenderController();
+			} else if (me.unit == SPECS.CHURCH) {
+				mySpecificRobotController = new ChurchController();
 			} else {
 				mySpecificRobotController = null;
 			}
@@ -368,15 +370,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		// Initialise internal state
 		public SpecificRobotController() {
-			myHomeX = -1;
-			myHomeY = -1;
-			for (Robot r: visibleRobots) {
-				if (r.team == me.team && distanceSquared(r, me) <= 2) {
-					myHomeX = r.x;
-					myHomeY = r.y;
-					break;
-				}
-			}
+			myHomeX = me.x;
+			myHomeY = me.y;
 		}
 
 		public SpecificRobotController(int homeX, int homeY, int castleTalk) {
@@ -403,13 +398,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private strictfp class CastleController extends SpecificRobotController {
 
 		private TreeSet<Integer> myPilgrims;
-		private final int MIN_PILGRIMS_OWNED = 2;
+		private int MIN_PILGRIMS_OWNED = 2;
 		private final int MSG_OFFSET = 4;
 		private final int PREACHER_SPAWNING_TIME = 4;
 
 		private final int BATTLE_THRESHOLD = 8;
 		private final int TIME_BETWEEN_BATTLES = 10;
 		private int previousBattlecry;
+
+		private final int ALLOW_CHURCHES_TURN = 150;
 
 		private Map<Integer, Integer> castleLocations;
 		private Queue<Integer> attackTargetList;
@@ -649,8 +646,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PREACHER;
 			}
 
+			int extraKarboniteReserve = 0;
+			if (me.turn >= ALLOW_CHURCHES_TURN) {
+				extraKarboniteReserve = SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE;
+				MIN_PILGRIMS_OWNED = 3;
+			}
+
 			if (toBuild != -1) {
-				if (karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
+				if (karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+extraKarboniteReserve &&
 					fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
 					for (int i = 0; i < 8; i++) {
 						// quick hack
@@ -713,6 +716,21 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
+	private strictfp class ChurchController extends SpecificRobotController {
+
+		// Initialise internal state
+		public ChurchController() {
+			// Call the inherited constructor
+			super();
+		}
+
+		public Action runSpecificTurn() throws BCException {
+			// Your job is simple
+			// Sit there and be beautiful
+			return null;
+		}
+	}
+
 	private strictfp class PilgrimController extends SpecificRobotController {
 
 		// Initialise internal state
@@ -736,6 +754,35 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null &&
 				((karboniteMap[y][x] && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) || (fuelMap[y][x] && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && karbonite > 0))) { // If no karbonite dont mine fuel
 				myAction = mine();
+			}
+
+			if (myAction == null &&
+				karbonite >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
+				fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
+				if (karboniteMap[y][x] || (fuelMap[y][x] && karbonite > 0)) { // pray
+					for (int i = 0; i < 8; i++) {
+						if (inBounds(x+dx[i], y+dy[i])) {
+							if (map[y+dy[i]][x+dx[i]] == MAP_PASSABLE && visibleRobotMap[y+dy[i]][x+dx[i]] == MAP_EMPTY) {
+								if (!karboniteMap[y+dy[i]][x+dx[i]] && !fuelMap[y+dy[i]][x+dx[i]]) {
+									myAction = buildUnit(SPECS.CHURCH, dx[i], dy[i]);
+									myHomeX = x+dx[i];
+									myHomeY = y+dy[i];
+								}
+							}
+						}
+					}
+					if (myAction == null) {
+						for (int i = 0; i < 8; i++) {
+							if (inBounds(x+dx[i], y+dy[i])) {
+								if (map[y+dy[i]][x+dx[i]] == MAP_PASSABLE && visibleRobotMap[y+dy[i]][x+dx[i]] == MAP_EMPTY) {
+									myAction = buildUnit(SPECS.CHURCH, dx[i], dy[i]);
+									myHomeX = x+dx[i];
+									myHomeY = y+dy[i];
+								}
+							}
+						}
+					}
+				}
 			}
 
 			if (myAction == null) {
@@ -896,7 +943,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int myTargetX;
 		private int myTargetY;
-		private int maxDispl;
 
 		// Initialise internal state
 		public AttackerController(int targetX, int targetY, int homeX, int homeY) {
@@ -907,7 +953,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			myTargetY = targetY;
 			myHomeX = homeX;
 			myHomeY = homeY;
-			maxDispl = 2;
 		}
 
 		public Action runSpecificTurn() throws BCException {
@@ -926,14 +971,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			if (!(myTargetX == myHomeX && myTargetY == myHomeY) &&
+			if (myAction == null &&
+				!(myTargetX == myHomeX && myTargetY == myHomeY) &&
 				pythagoras(me.x-myTargetX, me.y-myTargetY) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) { // mission accomplished
 				myTargetX = myHomeX;
 				myTargetY = myHomeY;
-				maxDispl = 2;
 			}
 
-			if (myTargetX == myHomeX && myTargetY == myHomeY &&
+			if (myAction == null &&
+				myTargetX == myHomeX && myTargetY == myHomeY &&
 				pythagoras(me.x-myTargetX, me.y-myTargetY) <= SPECS.UNITS[SPECS.CASTLE].VISION_RADIUS) { // downgrade
 				mySpecificRobotController = new DefenderController(myHomeX, myHomeY, PREACHER_SUCCESS);
 				return mySpecificRobotController.runSpecificTurn();
