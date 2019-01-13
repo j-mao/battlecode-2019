@@ -430,11 +430,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int crusadersCreated = 0;
 		private int prophetsCreated = 0;
 		private int preachersCreated = 0;
-		private boolean[] alreadyBuilt; // Which of the 8 directions have we already built in
+		private boolean[] alreadyBuilt; // Which of the 16 directions have we already built in
 
 		private final int NO_ATTACK = 0;
 		private final int ATTACK_ONGOING = 1;
 		private int attackStatus = 0;
+
+		// Possibly position for a defending unit
+		private final int[] ddx = {2, 1, 0, -1, -2, -2, -2, -2, -2, -1, 0, 1, 2, 2, 2, 2};
+		private final int[] ddy = {2, 2, 2, 2, 2, 1, 0, -1, -2, -2, -2, -2, -2, -1, 0, 1};
+		private boolean[] allowedloc = { true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false };
+
+		// Can we build a unit which is able to end up at (ddx[i], ddy[i]) from the castle
+		private int isReachable(int i, boolean ignoreunits) {
+			for (int j = 0; j < 8; j++) {
+				if (inBounds(me.x+dx[j], me.y+dy[j]) && 
+					map[me.y+dy[j]][me.x+dx[j]] == MAP_PASSABLE &&
+					(ignoreunits || visibleRobotMap[me.y+dy[j]][me.x+dx[j]] == MAP_EMPTY)) {
+					int d = pythagoras(dx[j]-ddx[i], dy[j]-ddy[i]);
+					if (d <= SPECS.UNITS[SPECS.PREACHER].SPEED) {
+						return j;	
+					}
+				}
+			}
+			return -1;
+		}
 
 		// Initialise internal state
 		public CastleController() {
@@ -443,7 +463,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			myPilgrims = new TreeSet<>();
 			myCastleTalk = 1;
-			alreadyBuilt = new boolean[8];
+			alreadyBuilt = new boolean[16];
 		}
 
 		public Action runSpecificTurn() throws BCException {
@@ -459,6 +479,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 				if (amFirstCastle) log("I am the first castle");
+
+				// Initialise which of the 16 locations we are 'allowed' to build a unit on
+				// By default this is all position that do not have ddx == 1 || ddy == 1
+				// This is because these position splash to 3 other positions and so are less optimal to 
+				for (int i = 0; i < 16; i += 2) {
+					if (!inBounds(me.x + ddx[i], me.y + ddy[i]) ||
+						map[me.y + ddy[i]][me.x + ddx[i]] == MAP_IMPASSABLE ||
+						isReachable(i, true) == -1) {
+						int j = (i == 0) ? 15 : i+1;
+						allowedloc[j] = true;
+						j = (i+1)%16;
+						allowedloc[j] = true;
+					} 
+				}
 			}
 
 			int toBuild = -1;
@@ -491,6 +525,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 					communications.sendRadio(1, furtherestUnit);
 					crusadersCreated = prophetsCreated = preachersCreated = 0; // Reset these because these units will go and rush a castle
+					for (int i = 0; i < 16; i++) alreadyBuilt[i] = false;
 				}
 				attackStatus = NO_ATTACK;
 			} else {
@@ -522,21 +557,53 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				// Find the location which minimises the distance to the nearest enemy
 				int bestDis = 42000;
 				int bestLoc = -1;
-				for (int i = 0; i < 8; i++) {
-					if (!alreadyBuilt[i] &&
-						inBounds(me.x+dx[i], me.y+dy[i]) &&
-						map[me.y+dy[i]][me.x+dx[i]] &&
-						visibleRobotMap[me.y+dy[i]][me.x+dx[i]] == MAP_EMPTY) {
-						int d = disToNearestEnemy(me.x+dx[i], me.y+dy[i]);
-						if (d < bestDis) {
-							bestDis = d;
-							bestLoc = i;
+
+				for (int i = 0; i < 16; i++) {
+					if (allowedloc[i] &&
+						!alreadyBuilt[i] &&
+						inBounds(me.x + ddx[i], me.y + ddy[i]) && 
+						map[me.y + ddy[i]][me.x + ddx[i]] == MAP_PASSABLE &&
+						visibleRobotMap[me.y + ddy[i]][me.x + ddx[i]] == MAP_EMPTY) {
+						int loc = isReachable(i, false);
+						if (loc != -1) {
+							int d = disToNearestEnemy(me.x+ddx[i], me.y+ddy[i]);
+							if (d < bestDis) {
+								bestDis = d;
+								bestLoc = i;
+							}
 						}
 					}
 				}
 				if (bestLoc != -1) {
-					myAction = buildUnit(toBuild, dx[bestLoc], dy[bestLoc]);
+					int loc = isReachable(bestLoc, false);
+					int _dx = ddx[bestLoc] - dx[loc];
+					int _dy = ddy[bestLoc] - dy[loc];
+					_dx+=2;
+					_dy+=2;
+					int message = _dx*5 + _dy;
+					int range = pythagoras(dx[loc], dy[loc]);
+					communications.sendRadio(message, range);
 					alreadyBuilt[bestLoc] = true;
+					bestLoc = loc;
+				}
+				else {
+					// There is no spot we can safely go to
+					// So we are going to ignore splash 
+					for (int i = 0; i < 8; i++) {
+						if (inBounds(me.x+dx[i], me.y+dy[i]) &&
+							map[me.y+dy[i]][me.x+dx[i]] &&
+							visibleRobotMap[me.y+dy[i]][me.x+dx[i]] == MAP_EMPTY) {
+							int d = disToNearestEnemy(me.x+dx[i], me.y+dy[i]);
+							if (d < bestDis) {
+								bestDis = d;
+								bestLoc = i;
+							}
+						}
+					}
+				}
+				
+				if (bestLoc != -1) {
+					myAction = buildUnit(toBuild, dx[bestLoc], dy[bestLoc]);
 					if (toBuild == SPECS.CRUSADER) crusadersCreated++;
 					else if (toBuild == SPECS.PROPHET) prophetsCreated++;
 					else if (toBuild == SPECS.PREACHER) preachersCreated++;
@@ -664,6 +731,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private final int ATTACK_ONGOING = 1;
 		private int attackStatus = ATTACK_ONGOING;
 
+		private int targetDx = 0, targetDy = 0;
+
 		public Action runSpecificTurn() throws BCException {
 
 			Action myAction = null;
@@ -686,23 +755,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-
-			if (me.unit == SPECS.PREACHER && myAction == null && attackStatus == ATTACK_ONGOING) {
-				// If we are next to our castle, we want to move away to prevent splash
-				for (int dx = -1; dx <= 1; dx++) {
-					for (int dy = -1; dy <= 1; dy++) {
-						int newx = x + dx;
-						int newy = y + dy;
-						if (inBounds(newx, newy) &&
-							isFriendlyStructure(newx, newy) &&
-							inBounds(x-dx, y-dy) &&
-							map[y-dy][x-dx] == MAP_PASSABLE &&
-							visibleRobotMap[y-dy][x-dx] <= 0) {
-							// Probably should move away...
-							myAction = move(-dx, -dy);
-						}
+			if (me.turn == 1) {
+				// Look for message from castle telling us where to go
+				for (Robot r : visibleRobots) {
+					if (isVisible(r) && isRadioing(r) && r.team == me.team && r.unit == SPECS.CASTLE) {
+						int message = communications.readRadio(r);
+						targetDy = (message%5)-2;
+						targetDx = (message/5)-2;
 					}
 				}
+			}
+
+			if (me.unit == SPECS.PREACHER && myAction == null && attackStatus == ATTACK_ONGOING && (targetDx != 0 || targetDy != 0)) {
+				myAction = move(targetDx, targetDy);
+				targetDx = targetDy = 0;
 			} else if (myAction == null && attackStatus == NO_ATTACK) {
 				// Bfs towards an enemy castle
 
