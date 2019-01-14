@@ -467,14 +467,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		public Action runSpecificTurn() throws BCException {
-
 			Action myAction = null;
 			if (me.turn == 1) {
 				// Check if I am the 'first castle'
 				// By checking if no other units have sent a 1 castletalk
 				amFirstCastle = true;
 				for (Robot robot : visibleRobots) {
-					if (communications.readCastle(robot) != 0) { 
+					if (communications.readCastle(robot) == 1) { 
 						amFirstCastle = false;
 					}
 				}
@@ -540,7 +539,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PREACHER;
 			}
 
-			if (toBuild == SPECS.PILGRIM && toBuild != -1) {
+			if (toBuild == SPECS.PILGRIM) {
 				if (karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
 					fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
 					for (int i = 0; i < 8; i++) {
