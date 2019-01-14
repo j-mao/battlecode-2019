@@ -200,12 +200,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
 						Robot robot = getRobot(unit);
 						if (robot.team == me.team) {
-							myAction = give(dx[dir], dy[dir], me.karbonite, me.fuel); 
+							myAction = give(dx[dir], dy[dir], me.karbonite, me.fuel);
+
+							// Obviously strictly optimal.
+							if (robot.unit == SPECS.CASTLE || robot.unit == SPECS.CHURCH) {
+								break;
+							}
 						}
 					}
 				}
 			}
 		}
+
 		return myAction;
 	}
 
@@ -744,6 +750,28 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 			int x = me.x;
 			int y = me.y;
+
+			// which castle / church owns me
+			if (me.turn == 1) {
+				// start with rand offset
+				int st = rng.nextInt()%8;
+				for (int d = 0; d < 8; d++) {
+					int i = (d + st)%8;
+					if (inBounds(x+dx[i], y+dy[i])) {
+						int unit = visibleRobotMap[y+dy[i]][x+dx[i]];
+						if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
+							Robot robot = getRobot(unit);
+							if (robot.team == me.team) {
+								if (robot.unit == SPECS.CASTLE || robot.unit == SPECS.CHURCH) {
+									myHomeX = x+dx[i];
+									myHomeY = y+dy[i];
+									break;
+								}
+							}
+						}
+					}
+				}
+			}
 
 			noteDangerousCells();
 
