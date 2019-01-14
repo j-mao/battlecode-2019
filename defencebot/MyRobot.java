@@ -430,6 +430,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int crusadersCreated = 0;
 		private int prophetsCreated = 0;
 		private int preachersCreated = 0;
+		private int enemyCrusaders = 0, enemyProphets = 0, enemyPreachers = 0;
 		private boolean[] alreadyBuilt; // Which of the 16 directions have we already built in
 
 		private final int NO_ATTACK = 0;
@@ -440,6 +441,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private final int[] ddx = {2, 1, 0, -1, -2, -2, -2, -2, -2, -1, 0, 1, 2, 2, 2, 2};
 		private final int[] ddy = {2, 2, 2, 2, 2, 1, 0, -1, -2, -2, -2, -2, -2, -1, 0, 1};
 		private boolean[] allowedloc = { true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false };
+
+		// The ids of the enemies we have seen so far
+		private boolean[] seenEnemies;
 
 		// Can we build a unit which is able to end up at (ddx[i], ddy[i]) from the castle
 		private int isReachable(int i, boolean ignoreunits) {
@@ -464,6 +468,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			myPilgrims = new TreeSet<>();
 			myCastleTalk = 1;
 			alreadyBuilt = new boolean[16];
+			seenEnemies = new boolean[SPECS.MAX_ID+1];
 		}
 
 		public Action runSpecificTurn() throws BCException {
@@ -501,16 +506,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			// Count the number of enemy units in our vision
-			int enemyCrusaders = 0, enemyProphets = 0, enemyPreachers = 0;
+			int seenThisTurn = 0;
 			for (Robot robot : visibleRobots) {
 				if (isVisible(robot) && robot.team != me.team) {
-					if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
-					else if (robot.unit == SPECS.PROPHET) enemyProphets++;
-					else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
+					seenThisTurn++;
+					if (!seenEnemies[robot.id]) {
+						if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
+						else if (robot.unit == SPECS.PROPHET) enemyProphets++;
+						else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
+						seenEnemies[robot.id] = true;
+					}
 				}
 			}
 
-			if (enemyCrusaders + enemyProphets + enemyPreachers == 0) {
+			if (seenThisTurn == 0) {
 				if (attackStatus == ATTACK_ONGOING) {
 					// Send message to units saying that attack is over
 					int furtherestUnit = 0;
@@ -524,6 +533,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 					communications.sendRadio(1, furtherestUnit);
 					crusadersCreated = prophetsCreated = preachersCreated = 0; // Reset these because these units will go and rush a castle
+					enemyCrusaders = enemyProphets = enemyPreachers = 0; 
 					for (int i = 0; i < 16; i++) alreadyBuilt[i] = false;
 				}
 				attackStatus = NO_ATTACK;
