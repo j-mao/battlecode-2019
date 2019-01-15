@@ -105,15 +105,32 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		OUR_CASTLE, OUR_CHURCH, ENEMY_CASTLE, ENEMY_CHURCH;
 
 		KnownStructureType otherOwner() {
-			if (this == null) { // null represents no structure
-				return null;
-			}
 			switch (this) {
 				case OUR_CASTLE:   return ENEMY_CASTLE;
 				case OUR_CHURCH:   return ENEMY_CHURCH;
 				case ENEMY_CASTLE: return OUR_CASTLE;
 				case ENEMY_CHURCH: return OUR_CHURCH;
-				default:           return null;
+				default:           return null; // what o_O
+			}
+		}
+
+		boolean isFriendly() {
+			switch (this) {
+				case OUR_CASTLE:
+				case OUR_CHURCH:   return true;
+				case ENEMY_CASTLE:
+				case ENEMY_CHURCH: return false;
+				default:           return false; // what o_O
+			}
+		}
+
+		boolean isEnemy() {
+			switch (this) {
+				case OUR_CASTLE:
+				case OUR_CHURCH:   return false;
+				case ENEMY_CASTLE:
+				case ENEMY_CHURCH: return true;
+				default:           return false; // what o_O
 			}
 		}
 	}
@@ -147,6 +164,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			y = r.y;
 		}
 
+		MapLocation(int hashVal) {
+			x = hashVal >> 6;
+			y = hashVal & 63;
+		}
+
 		int getX() {
 			return x;
 		}
@@ -170,12 +192,45 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return new MapLocation(x+dir.getX(), y+dir.getY());
 		}
 
+		Direction directionTo(MapLocation destination) {
+			return new Direction(destination.getX() - x, destination.getY() - y);
+		}
+
 		int distanceSquaredTo(MapLocation oth) {
 			return (x - oth.getX()) * (x - oth.getX()) + (y - oth.getY()) * (y - oth.getY());
 		}
 
 		boolean isOnMap() {
 			return x >= 0 && x < boardSize && y >= 0 && y < boardSize;
+		}
+
+		// TODO should we change all calls to BfsSolver.solve to use MapLocation.isOccupiable as part of their visit condition?
+		boolean isOccupiable() {
+			return isOnMap() && get(map) == MAP_PASSABLE && get(visibleRobotMap) == MAP_EMPTY;
+		}
+
+		void set(boolean[][] arr, boolean value) {
+			arr[y][x] = value;
+		}
+
+		void set(int[][] arr, int value) {
+			arr[y][x] = value;
+		}
+
+		<T> void set(T[][] arr, T value) {
+			arr[y][x] = value;
+		}
+
+		boolean get(boolean[][] arr) {
+			return arr[y][x];
+		}
+
+		int get(int[][] arr) {
+			return arr[y][x];
+		}
+
+		<T> T get(T[][] arr) {
+			return arr[y][x];
 		}
 
 		@Override
@@ -203,6 +258,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			y = valueY;
 		}
 
+		Direction(int hashVal) {
+			// Warning: only use for small directions, or else hash codes may be impossible to decrypt
+			// If your direction vector is big, you should consider using MapLocation instead
+			x = (hashVal >> 4) - 8;
+			y = (hashVal & 15) - 8;
+		}
+
 		int getX() {
 			return x;
 		}
@@ -226,13 +288,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		@Override
 		public int hashCode() {
-			return ((x+128) << 10) | (y+128);
+			// Warning: only use for small directions, or else hash codes may be impossible to decrypt
+			// If your direction vector is big, you should consider using MapLocation instead
+			return ((x+8) << 4) | (y+8);
 		}
 	}
 
 	//////// Functions to help with initialisation ////////
 
 	private void noteDangerousCells() {
+		// TODO factor in preacher AoE
 		isDangerousRunId++;
 		for (Robot r: visibleRobots) {
 			if (isVisible(r) && r.team != me.team) {
@@ -247,7 +312,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								dir.getMagnitude() >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0] &&
 								dir.getMagnitude() <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]) {
 
-								isDangerous[target.getY()][target.getX()] = isDangerousRunId;
+								target.set(isDangerous, isDangerousRunId);
 							}
 						}
 					}
@@ -262,35 +327,33 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			MapLocation location = new MapLocation(r);
 
 			if (r.unit == SPECS.CASTLE && r.team == me.team) {
-				knownStructures[location.getY()][location.getX()] = KnownStructureType.OUR_CASTLE;
+				location.set(knownStructures, KnownStructureType.OUR_CASTLE);
 			} else if (r.unit == SPECS.CASTLE && r.team != me.team) {
-				knownStructures[location.getY()][location.getX()] = KnownStructureType.ENEMY_CASTLE;
+				location.set(knownStructures, KnownStructureType.ENEMY_CASTLE);
 			} else if (r.unit == SPECS.CHURCH && r.team == me.team) {
-				knownStructures[location.getY()][location.getX()] = KnownStructureType.OUR_CHURCH;
+				location.set(knownStructures, KnownStructureType.OUR_CHURCH);
 			} else if (r.unit == SPECS.CHURCH && r.team != me.team) {
-				knownStructures[location.getY()][location.getX()] = KnownStructureType.ENEMY_CHURCH;
+				location.set(knownStructures, KnownStructureType.ENEMY_CHURCH);
 			}
 
 			// First time we've seen this stucture, store its location
-			if (knownStructures[location.getY()][location.getX()] != null &&
-				!knownStructuresSeenBefore[location.getY()][location.getX()]) {
-
+			if (location.get(knownStructures) != null && !location.get(knownStructuresSeenBefore)) {
 				knownStructuresCoords.add(location);
 			}
 
 			// Because of symmetry, we know a bit more
 			// Only run this if we have not seen this structure before
-			if (!knownStructuresSeenBefore[location.getY()][location.getX()] &&
+			if (!location.get(knownStructuresSeenBefore) &&
 				symmetryStatus != BoardSymmetryType.BOTH_SYMMETRICAL &&
-				(knownStructures[location.getY()][location.getX()] == KnownStructureType.OUR_CASTLE ||
-				 knownStructures[location.getY()][location.getX()] == KnownStructureType.ENEMY_CASTLE)) {
+				(location.get(knownStructures) == KnownStructureType.OUR_CASTLE ||
+				 location.get(knownStructures) == KnownStructureType.ENEMY_CASTLE)) {
 
 				MapLocation opposite = location.opposite(symmetryStatus);
-				knownStructures[opposite.getY()][opposite.getX()] = knownStructures[location.getY()][location.getX()].otherOwner();
-				knownStructuresSeenBefore[opposite.getY()][opposite.getX()] = true;
+				opposite.set(knownStructures, location.get(knownStructures).otherOwner());
+				opposite.set(knownStructuresSeenBefore, true);
 			}
 
-			knownStructuresSeenBefore[location.getY()][location.getX()] = true;
+			location.set(knownStructuresSeenBefore, true);
 		}
 
 		// Iterate over all structures we have ever seen and remove them if we can see they are dead
@@ -299,8 +362,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		while (iterator.hasNext())
 		{
 			MapLocation location = iterator.next();
-			if (visibleRobotMap[location.getY()][location.getX()] == MAP_EMPTY) {
-				knownStructures[location.getY()][location.getX()] = null;
+			if (location.get(visibleRobotMap) == MAP_EMPTY) {
+				location.set(knownStructures, null);
 			}
 		}
 	}
@@ -310,13 +373,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int j = 0; j < boardSize; j++) {
 				MapLocation location = new MapLocation(i, j);
 				MapLocation opposite = location.opposite(symm);
-				if (map[location.getY()][location.getX()] != map[opposite.getY()][opposite.getX()]) {
+				if (location.get(map) != opposite.get(map)) {
 					return false;
 				}
-				if (karboniteMap[location.getY()][location.getX()] != karboniteMap[opposite.getY()][opposite.getX()]) {
+				if (location.get(karboniteMap) != opposite.get(karboniteMap)) {
 					return false;
 				}
-				if (fuelMap[location.getY()][location.getX()] != fuelMap[opposite.getY()][opposite.getX()]) {
+				if (location.get(fuelMap) != opposite.get(fuelMap)) {
 					return false;
 				}
 			}
@@ -342,6 +405,22 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	//////// Helper functions ////////
 
+	private Action move(Direction dir) {
+		return move(dir.getX(), dir.getY());
+	}
+
+	private Action buildUnit(int unitType, Direction dir) {
+		return buildUnit(unitType, dir.getX(), dir.getY());
+	}
+
+	private Action give(Direction dir, int k, int f) {
+		return give(dir.getX(), dir.getY(), k, f);
+	}
+
+	private Action attack(Direction dir) {
+		return attack(dir.getX(), dir.getY());
+	}
+
 	private boolean isStructure(int unitType) {
 		return unitType == SPECS.CASTLE || unitType == SPECS.CHURCH;
 	}
@@ -358,7 +437,36 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private boolean isFriendlyStructure(MapLocation location) {
-		return isFriendlyStructure(visibleRobotMap[location.getY()][location.getX()]);
+		if (isFriendlyStructure(location.get(visibleRobotMap))) {
+			return true;
+		}
+		KnownStructureType what = location.get(knownStructures);
+		if (what != null && what.isFriendly()) {
+			return true;
+		}
+		return false;
+	}
+
+	private boolean isEnemyStructure(Robot r) {
+		if (r == null) {
+			return false;
+		}
+		return isVisible(r) && r.team != me.team && isStructure(r.unit);
+	}
+
+	private boolean isEnemyStructure(int robotId) {
+		return isFriendlyStructure(getRobot(robotId));
+	}
+
+	private boolean isEnemyStructure(MapLocation location) {
+		if (isEnemyStructure(location.get(visibleRobotMap))) {
+			return true;
+		}
+		KnownStructureType what = location.get(knownStructures);
+		if (what != null && what.isEnemy()) {
+			return true;
+		}
+		return false;
 	}
 
 	public boolean isAggressiveRobot(int unitType) {
@@ -369,19 +477,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return unitType == SPECS.PREACHER;
 	}
 
+	private int distanceToNearestEnemyFromLocation(MapLocation source) {
+		// Excludes pilgrims
+		int ans = Integer.MAX_VALUE;
+		for (Robot robot: visibleRobots) {
+			if (isVisible(robot) && robot.team != me.team && robot.unit != SPECS.PILGRIM) {
+				ans = Math.min(ans, source.distanceSquaredTo(new MapLocation(robot)));
+			}
+		}
+		return ans;
+	}
+
 	//////// Action-specific functions ////////
 
 	private Action tryToGiveTowardsLocation(MapLocation target) {
 		Action myAction = null;
 		for (int dir = 0; dir < 8; dir++) {
 			MapLocation location = myLoc.add(dirs[dir]);
-			if (location.isOnMap()) {
-				if (target.distanceSquaredTo(myLoc) > target.distanceSquaredTo(location)) {
-					int unit = visibleRobotMap[location.getY()][location.getX()];
-					if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
-						Robot robot = getRobot(unit);
-						if (robot.team == me.team) {
-							myAction = give(dirs[dir].getX(), dirs[dir].getY(), me.karbonite, me.fuel);
+			if (location.isOnMap() && target.distanceSquaredTo(myLoc) > target.distanceSquaredTo(location)) {
+				int unit = location.get(visibleRobotMap);
+				if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
+					Robot robot = getRobot(unit);
+					if (robot.team == me.team) {
+						myAction = give(dirs[dir], me.karbonite, me.fuel);
+						if (isStructure(robot.unit)) {
+							break;
 						}
 					}
 				}
@@ -390,14 +510,35 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return myAction;
 	}
 
-	private Action tryToGoSomewhereNotDangerous() {
-		// TODO
+	private Action tryToGoSomewhereNotDangerous(int maxDispl, int maxSpeed) {
+		// TODO maybe return null if we're already safe?
+		for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+			Direction dir = new Direction(i, j);
+			if (dir.getMagnitude() <= maxSpeed) {
+				MapLocation location = myLoc.add(dir);
+				if (location.isOccupiable() && location.get(isDangerous) != isDangerousRunId) {
+					return move(dir);
+				}
+			}
+		}
 		return null;
 	}
 
 	private Action tryToAttack() {
-		// TODO
-		return null;
+		// TODO factor in preacher AoE
+		Action myAction = null;
+		for (Robot r: visibleRobots) {
+			if (isVisible(r)) {
+				MapLocation theirLoc = new MapLocation(r);
+				if (r.team != me.team &&
+					myLoc.distanceSquaredTo(theirLoc) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
+					myLoc.distanceSquaredTo(theirLoc) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+
+					myAction = attack(myLoc.directionTo(new MapLocation(r)));
+				}
+			}
+		}
+		return myAction;
 	}
 
 	//////// Communications library ////////
@@ -469,7 +610,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			qL.add(source);
 			qD.add(null);
-			bfsVisited[source.getY()][source.getX()] = bfsRunId;
+			source.set(bfsVisited, bfsRunId);
 
 			while (!qL.isEmpty()) {
 				MapLocation u = qL.poll();
@@ -485,9 +626,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						Direction dir = new Direction(i, j);
 						if (dir.getMagnitude() <= maxSpeed) {
 							MapLocation v = u.add(dir);
-							if (v.isOnMap() && bfsVisited[v.getY()][v.getX()] != bfsRunId) {
+							if (v.isOnMap() && v.get(bfsVisited) != bfsRunId) {
 								if (visitCondition.apply(v)) {
-									bfsVisited[v.getY()][v.getX()] = bfsRunId;
+									v.set(bfsVisited, bfsRunId);
 									qL.add(v);
 									if (ud == null) {
 										qD.add(dir);
@@ -512,7 +653,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected int myCastleTalk;
 
 		SpecificRobotController() {
-			this(myLoc);
+
+			myHome = myLoc;
+
+			if (!isStructure(me.unit)) {
+				for (int i = 0; i < 8; i++) {
+					MapLocation location = myLoc.add(dirs[i]);
+					if (location.isOnMap() && isFriendlyStructure(location)) {
+						myHome = location;
+					}
+				}
+			}
+
+			myCastleTalk = 0;
 		}
 
 		SpecificRobotController(MapLocation newHome) {
@@ -542,6 +695,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int crusadersCreated;
 		private int prophetsCreated;
 		private int preachersCreated;
+		private int enemyCrusaders;
+		private int enemyProphets;
+		private int enemyPreachers;
+		private boolean[] seenEnemies;
 
 		private AttackStatusType attackStatus;
 
@@ -563,7 +720,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			new Direction(2, 0),
 			new Direction(2, 1)
 		};
-		private boolean[] allowedloc = { true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false };
+		private boolean[] allowedLoc = { true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false };
 		private boolean[] alreadyBuilt;
 
 		CastleController() {
@@ -578,6 +735,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			crusadersCreated = 0;
 			prophetsCreated = 0;
 			preachersCreated = 0;
+			enemyCrusaders = 0;
+			enemyProphets = 0;
+			enemyPreachers = 0;
+			seenEnemies = new boolean[SPECS.MAX_ID+1];
 
 			attackStatus = AttackStatusType.NO_ATTACK;
 
@@ -595,11 +756,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				for (int i = 0; i < 16; i += 2) {
 					MapLocation location = myLoc.add(ddirs[i]);
 					if (!location.isOnMap() ||
-						map[location.getY()][location.getX()] == MAP_IMPASSABLE ||
+						location.get(map) == MAP_IMPASSABLE ||
 						buildDirectionForPreacherToReach(ddirs[i], true) == null) {
 
-						allowedloc[(i+1)%16] = true;
-						allowedloc[(i+15)%16] = true;
+						allowedLoc[(i+1)%16] = true;
+						allowedLoc[(i+15)%16] = true;
 					}
 				}
 
@@ -632,10 +793,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								// Receiving y coordinate
 								MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg);
 								castleLocations.put(r.id, where);
-								if (symmetryStatus == BoardSymmetryType.BOTH_SYMMETRICAL || symmetryStatus == BoardSymmetryType.HOR_SYMMETRICAL) {
+								if (symmetryStatus != BoardSymmetryType.VER_SYMMETRICAL) {
 									attackTargetList.add(where.opposite(BoardSymmetryType.HOR_SYMMETRICAL));
 								}
-								if (symmetryStatus == BoardSymmetryType.BOTH_SYMMETRICAL || symmetryStatus == BoardSymmetryType.VER_SYMMETRICAL) {
+								if (symmetryStatus != BoardSymmetryType.HOR_SYMMETRICAL) {
 									attackTargetList.add(where.opposite(BoardSymmetryType.VER_SYMMETRICAL));
 								}
 							} else {
@@ -647,21 +808,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			int toBuild = -1;
-			if (isFirstCastle && me.turn == 1) {
-				toBuild = SPECS.PILGRIM;
-			}
-
-			int enemyCrusaders = 0, enemyProphets = 0, enemyPreachers = 0;
+			int enemiesSeenThisTurn = 0;
 			for (Robot robot : visibleRobots) {
 				if (isVisible(robot) && robot.team != me.team) {
-					if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
-					else if (robot.unit == SPECS.PROPHET) enemyProphets++;
-					else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
+					enemiesSeenThisTurn++;
+					if (!seenEnemies[robot.id]) {
+						if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
+						else if (robot.unit == SPECS.PROPHET) enemyProphets++;
+						else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
+						seenEnemies[robot.id] = true;
+					}
 				}
 			}
 
-			if (enemyCrusaders+enemyProphets+enemyPreachers == 0) {
+			if (enemiesSeenThisTurn == 0) {
 				if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
 					// Send message to units saying that attack is over
 					int broadcastDistance = 0;
@@ -675,6 +835,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// TODO are we really rushing though?
 					// Reset these because these units will go and rush a castle
 					crusadersCreated = prophetsCreated = preachersCreated = 0;
+					enemyCrusaders = enemyProphets = enemyPreachers = 0;
 					for (int i = 0; i < 16; i++) alreadyBuilt[i] = false;
 				}
 				attackStatus = AttackStatusType.NO_ATTACK;
@@ -682,8 +843,93 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				attackStatus = AttackStatusType.ATTACK_ONGOING;
 			}
 
-			// TODO complete the rest of this
+			int toBuild = -1;
+			if (crusadersCreated < enemyCrusaders) {
+				toBuild = SPECS.CRUSADER;
+			} else if (prophetsCreated < enemyProphets) {
+				toBuild = SPECS.PROPHET;
+			} else if (preachersCreated < enemyPreachers) {
+				toBuild = SPECS.PREACHER;
+			} else if (isFirstCastle && me.turn == 1) {
+				toBuild = SPECS.PILGRIM;
+			} else {
+				// TODO maybe actually build some more units
+			}
 
+			if (toBuild != -1 &&
+				karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
+				fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
+
+				if (toBuild == SPECS.PILGRIM) {
+					// TODO build towards resources rather than just anywhere
+					for (int i = 0; i < 8; i++) {
+						MapLocation location = myLoc.add(dirs[i]);
+						if (location.isOnMap() &&
+							location.get(map) == MAP_PASSABLE &&
+							location.get(visibleRobotMap) == MAP_EMPTY) {
+
+							myAction = buildUnit(toBuild, dirs[i]);
+							break;
+						}
+					}
+				} else {
+					// Builds towards the nearest enemy
+
+					int bestGuardPost = -1;
+					Direction bestBuildDir = null;
+					int bestDistance = Integer.MAX_VALUE;
+
+					for (int i = 0; i < 16; i++) {
+						MapLocation location = myLoc.add(ddirs[i]);
+						if (allowedLoc[i] &&
+							!alreadyBuilt[i] &&
+							location.isOnMap() &&
+							location.get(map) == MAP_PASSABLE &&
+							location.get(visibleRobotMap) == MAP_EMPTY) {
+
+							Direction alternative = buildDirectionForPreacherToReach(ddirs[i], false);
+							if (alternative != null) {
+								int d = distanceToNearestEnemyFromLocation(location);
+								if (d < bestDistance) {
+									bestGuardPost = i;
+									bestBuildDir = alternative;
+									bestDistance = d;
+								}
+							}
+						}
+					}
+					if (bestDistance != Integer.MAX_VALUE) {
+						communications.sendRadio(myLoc.add(ddirs[bestGuardPost]).hashCode(), bestBuildDir.getMagnitude());
+						alreadyBuilt[bestGuardPost] = true;
+					} else {
+						// No government-certified allowedLoc, so just go somewhere decent
+						for (int i = 0; i < 8; i++) {
+							MapLocation location = myLoc.add(dirs[i]);
+							if (location.isOnMap() &&
+								location.get(map) == MAP_PASSABLE &&
+								location.get(visibleRobotMap) == MAP_EMPTY) {
+
+								int d = distanceToNearestEnemyFromLocation(location);
+								if (d < bestDistance) {
+									bestBuildDir = dirs[i];
+									bestDistance = d;
+								}
+							}
+						}
+					}
+
+					if (bestBuildDir != null) {
+						myAction = buildUnit(toBuild, bestBuildDir);
+						if (toBuild == SPECS.CRUSADER) {
+							crusadersCreated++;
+						} else if (toBuild == SPECS.PROPHET) {
+							prophetsCreated++;
+						} else if (toBuild == SPECS.PREACHER) {
+							preachersCreated++;
+						}
+					}
+				}
+			}
 			return myAction;
 		}
 
@@ -692,8 +938,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int i = 0; i < 8; i++) {
 				MapLocation middle = myLoc.add(dirs[i]);
 				if (middle.isOnMap() &&
-					map[middle.getY()][middle.getX()] == MAP_PASSABLE &&
-					(ignoreUnits || visibleRobotMap[middle.getY()][middle.getX()] == MAP_EMPTY)) {
+					middle.get(map) == MAP_PASSABLE &&
+					(ignoreUnits || middle.get(visibleRobotMap) == MAP_EMPTY)) {
 
 					if (middle.distanceSquaredTo(targetLoc) <= SPECS.UNITS[SPECS.PREACHER].SPEED) {
 						return dirs[i];
@@ -722,18 +968,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			super();
 		}
 
-		/*PilgrimController(MapLocation newHome) {
-			super(newHome);
-		}*/
-
 		@Override
 		Action runSpecificTurn() {
 
 			Action myAction = null;
 			noteDangerousCells();
 
-			if (myAction == null && isDangerous[myLoc.getY()][myLoc.getX()] == isDangerousRunId) {
-				myAction = tryToGoSomewhereNotDangerous();
+			if (myAction == null && myLoc.get(isDangerous) == isDangerousRunId) {
+				myAction = tryToGoSomewhereNotDangerous(2, SPECS.UNITS[me.unit].SPEED);
 			}
 
 			if (myAction == null &&
@@ -743,8 +985,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null && (
-				(karboniteMap[myLoc.getY()][myLoc.getX()] && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) /* ||
-				(fuelMap[myLoc.getY()][myLoc.getX()] && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) */ )) {
+				(myLoc.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) /* ||
+				(myLoc.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) */ )) {
 
 				myAction = mine();
 			}
@@ -752,14 +994,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
 					(location)->{
-						if (visibleRobotMap[location.getY()][location.getX()] <= 0 &&
-							karboniteMap[location.getY()][location.getX()] &&
+						if (location.get(visibleRobotMap) <= 0 &&
+							location.get(karboniteMap) &&
 							me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 
 							return true;
 						}
-						if (visibleRobotMap[location.getY()][location.getX()] <= 0 &&
-							fuelMap[location.getY()][location.getX()] &&
+						// TODO possible conflict with pilgrims never mining fuel
+						if (location.get(visibleRobotMap) <= 0 &&
+							location.get(fuelMap) &&
 							me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && karbonite > 0) {
 
 							return true;
@@ -772,13 +1015,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 						return false;
 					},
-					(location)->{ return visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc); },
-					(location)->{ return map[location.getY()][location.getX()] == MAP_PASSABLE && isDangerous[location.getY()][location.getX()] != isDangerousRunId; });
+					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+					(location)->{ return location.get(map) == MAP_PASSABLE && location.get(isDangerous) != isDangerousRunId; });
 
-				if (bestDir != null) {
-					myAction = move(bestDir.getX(), bestDir.getY());
+				if (bestDir != null && myLoc.add(bestDir).isOccupiable()) {
+					myAction = move(bestDir);
 				} else {
-					myAction = tryToGoSomewhereNotDangerous();
+					myAction = tryToGoSomewhereNotDangerous(2, SPECS.UNITS[me.unit].SPEED);
 				}
 			}
 
@@ -788,25 +1031,83 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class DefenderController extends SpecificRobotController {
 
+		private AttackStatusType attackStatus;
+		private MapLocation desiredLocation;
+
 		DefenderController() {
 			super();
+
+			// TODO do we really want to initialise with ongoing attack status?
+			attackStatus = AttackStatusType.ATTACK_ONGOING;
+			desiredLocation = null;
 		}
 
 		DefenderController(MapLocation newHome) {
 			super(newHome);
+
+			// TODO do we really want to initialise with ongoing attack status?
+			attackStatus = AttackStatusType.ATTACK_ONGOING;
+			desiredLocation = null;
 		}
 
 		@Override
 		Action runSpecificTurn() {
 
 			Action myAction = tryToAttack();
-			// TODO complete this
+
+			// TODO Check for attack status downgrade message
+
+			// Check for castle first-turn location assignment
+			if (me.turn == 1) {
+				for (Robot r: visibleRobots) {
+					if (isVisible(r) && isRadioing(r) && r.team == me.team && r.unit == SPECS.CASTLE) {
+						desiredLocation = new MapLocation(communications.readRadio(r));
+					}
+				}
+			}
+
+			// TODO sync with castle signalling: currently they also signal for crusaders and prophets but only preachers listen
+			if (me.unit == SPECS.PREACHER &&
+				myAction == null &&
+				attackStatus == AttackStatusType.ATTACK_ONGOING &&
+				desiredLocation != null) {
+
+				if (desiredLocation.isOccupiable()) {
+					myAction = move(myLoc.directionTo(desiredLocation));
+					desiredLocation = null;
+				}
+			}
+
+			// TODO change this to turtling instead of going to enemy castle, upgrade to AttackerController when instructed
+			if (myAction == null && attackStatus == AttackStatusType.NO_ATTACK) {
+				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
+					(location)->{ return isEnemyStructure(location); },
+					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+					(location)->{ return location.get(map) == MAP_PASSABLE; });
+
+				if (bestDir == null) {
+					bestDir = dirs[rng.nextInt() % 8];
+				}
+
+				MapLocation newLoc = myLoc.add(bestDir);
+				if (newLoc.isOccupiable()) {
+					myAction = move(bestDir);
+				}
+			}
+
+			if (myAction == null && (me.karbonite != 0 || me.fuel != 0)) {
+				myAction = tryToGiveTowardsLocation(myHome);
+			}
 
 			return myAction;
 		}
 
-		private boolean isGoodTurtlingLocation() {
-			return false;
+		private boolean isGoodTurtlingLocation(MapLocation location) {
+			if (location.get(karboniteMap) || location.get(fuelMap)) {
+				return false;
+			}
+			// TODO make this ensure connectivity with the rest of the turtle
+			return (myHome.getX() + myHome.getY() + location.getX() + location.getY()) % 2 == 0;
 		}
 	}
 
@@ -831,7 +1132,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			// TODO maybe go closer before downgrading to defence
-			// TODO broadcast preacher success
+			// TODO broadcast attack success
 			if (myAction == null &&
 				myTarget.equals(myHome) &&
 				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[SPECS.CASTLE].VISION_RADIUS) {
@@ -846,24 +1147,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						return !(visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc)) &&
 							location.distanceSquaredTo(myTarget) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
 							location.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1];
-						},
-					(location)->{ return visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc); },
-					(location)->{ return map[location.getY()][location.getX()] == MAP_PASSABLE; });
+					},
+					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+					(location)->{ return location.get(map) == MAP_PASSABLE; });
 
 				if (bestDir == null) {
 					bestDir = dirs[rng.nextInt() % 8];
 				}
 
 				MapLocation newLoc = myLoc.add(bestDir);
-				if (newLoc.isOnMap() &&
-					map[newLoc.getY()][newLoc.getX()] == MAP_PASSABLE &&
-					visibleRobotMap[newLoc.getY()][newLoc.getX()] == MAP_EMPTY) {
-
-					myAction = move(bestDir.getX(), bestDir.getY());
+				if (newLoc.isOccupiable()) {
+					myAction = move(bestDir);
 				}
 
 			}
-
 			return myAction;
 		}
 	}
