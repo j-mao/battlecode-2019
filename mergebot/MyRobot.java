@@ -29,9 +29,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private Robot[] visibleRobots;
 	private int[][] visibleRobotMap;
 	private BoardSymmetryType symmetryStatus;
-	private boolean[][] reachable;
-	private int reachableKarbonite;
-	private int reachableFuel;
+	private int numKarbonite;
+	private int numFuel;
 
 	// Game staging constants
 	private static final int KARB_RESERVE_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
@@ -74,7 +73,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			prevKarbonite = karbonite;
 			prevFuel = fuel;
 
-			reachable = new boolean[boardSize][boardSize];
+			numKarbonite = 0;
+			numFuel = 0;
+
 			isDangerous = new int[boardSize][boardSize];
 			knownStructures = new KnownStructureType[boardSize][boardSize];
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
@@ -83,22 +84,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			rng = new SimpleRandom();
 			communications = new Communicator();
 			myBfsSolver = new BfsSolver();
-
-			myBfsSolver.solve(myLoc, (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].SPEED)), SPECS.UNITS[me.unit].SPEED,
-				(location)->{ return false; },
-				(location)->{ return false; },
-				(location)->{ return location.get(map) == MAP_PASSABLE; });
-			for (int i = 0; i < boardSize; i++) for (int j = 0;j < boardSize; j++) {
-				reachable[j][i] = myBfsSolver.wasVisited(new MapLocation(i, j));
-				if (reachable[j][i]) {
-					if (karboniteMap[j][i]) {
-						reachableKarbonite++;
-					}
-					if (fuelMap[j][i]) {
-						reachableFuel++;
-					}
-				}
-			}
 
 			determineSymmetricOrientation();
 
@@ -300,6 +285,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		int getMagnitude() {
 			return x * x + y * y;
+		}
+
+		Direction opposite() {
+			return new Direction(-x, -y);
 		}
 
 		@Override
@@ -699,9 +688,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int[][] bfsVisited;
 		private int bfsRunId;
+		private Direction[][] from;
+		private Direction[] solutionStack;
+		int solutionStackHead;
 
 		BfsSolver() {
 			bfsVisited = new int[boardSize][boardSize];
+			from = new Direction[boardSize][boardSize];
+			solutionStack = new Direction[boardSize*boardSize];
+			solutionStackHead = 0;
 		}
 
 		/**
@@ -711,12 +706,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		 * @param visitCondition Which states to visit and therefore add to the queue
 		 * @return The best direction in which to go, or null if solution not found
 		 */
-		Direction solve(MapLocation source, int maxDispl, int maxSpeed,
+		void solve(MapLocation source, int maxDispl, int maxSpeed,
 				java.util.function.Function<MapLocation, Boolean> objectiveCondition,
 				java.util.function.Function<MapLocation, Boolean> skipCondition,
 				java.util.function.Function<MapLocation, Boolean> visitCondition) {
 
 			bfsRunId++;
+			solutionStackHead = 0;
 
 			Queue<MapLocation> qL = new LinkedList<>();
 			Queue<Direction> qD = new LinkedList<>();
@@ -724,12 +720,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			qL.add(source);
 			qD.add(null);
 			source.set(bfsVisited, bfsRunId);
+			source.set(from, null);
 
+			MapLocation arrival = null;
 			while (!qL.isEmpty()) {
 				MapLocation u = qL.poll();
 				Direction ud = qD.poll();
 				if (objectiveCondition.apply(u)) {
-					return ud;
+					arrival = u;
+					break;
 				}
 				if (skipCondition.apply(u)) {
 					continue;
@@ -742,6 +741,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							if (v.isOnMap() && v.get(bfsVisited) != bfsRunId) {
 								if (visitCondition.apply(v)) {
 									v.set(bfsVisited, bfsRunId);
+									v.set(from, dir);
 									qL.add(v);
 									if (ud == null) {
 										qD.add(dir);
@@ -754,7 +754,21 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
-			return null;
+			if (arrival != null) {
+				while (arrival.get(from) != null) {
+					solutionStack[solutionStackHead] = arrival.get(from);
+					solutionStackHead++;
+					arrival = arrival.add(arrival.get(from).opposite());
+				}
+			}
+		}
+
+		Direction nextStep() {
+			if (solutionStackHead == 0) {
+				return null;
+			}
+			solutionStackHead--;
+			return solutionStack[solutionStackHead];
 		}
 
 		boolean wasVisited(MapLocation location) {
@@ -801,10 +815,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class CastleController extends SpecificRobotController {
 
-		private TreeSet<Integer> myPilgrims;
-		private int minPilgrimsOwned;
-
 		private Map<Integer, MapLocation> castleLocations;
+		private Map<Integer, MapLocation> unitAssignments;
 		private Queue<MapLocation> attackTargetList;
 
 		private boolean isFirstCastle;
@@ -839,14 +851,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			new Direction(2, 0),
 			new Direction(2, 1)
 		};
-		private boolean[] allowedLoc = { true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false };
+		private boolean[] allowedLoc = {true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false};
 		private boolean[] alreadyBuilt;
 
 		CastleController() {
 			super();
-
-			myPilgrims = new TreeSet<>();
-			minPilgrimsOwned = 2;
 
 			castleLocations = new TreeMap<>();
 			attackTargetList = new LinkedList<>();
@@ -941,6 +950,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			// Check if we are under attack
 			int enemiesSeenThisTurn = 0;
 			for (Robot robot: visibleRobots) {
 				if (isVisible(robot) && robot.team != me.team) {
@@ -987,11 +997,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PILGRIM;
 			} else if (me.turn < KARB_RESERVE_THRESHOLD &&
 				karbonite > prevKarbonite &&
-				friendlyUnits[SPECS.PILGRIM] < (reachableKarbonite+5)/2) {
+				friendlyUnits[SPECS.PILGRIM] < (numKarbonite+5)/2) {
 
 				toBuild = SPECS.PILGRIM;
-			} else if (me.turn >= KARB_RESERVE_THRESHOLD || friendlyUnits[SPECS.PILGRIM] >= (reachableKarbonite+5)/2) {
-				if (friendlyUnits[SPECS.PILGRIM] < (reachableKarbonite+5)/2) {
+			} else if (me.turn >= KARB_RESERVE_THRESHOLD || friendlyUnits[SPECS.PILGRIM] >= (numKarbonite+5)/2) {
+				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+5)/2) {
 					toBuild = SPECS.PILGRIM;
 				} else if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER] &&
 					friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.PROPHET]) {
@@ -1150,31 +1160,36 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null) {
-				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
-					(location)->{
-						if (location.get(visibleRobotMap) > 0) {
-							return false;
-						}
-						if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
-							return true;
-						}
-						if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && location.get(isDangerous) != isDangerousRunId) {
-							return true;
-						}
-						if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
-							me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
+				Direction bestDir = myBfsSolver.nextStep();
+				// TODO check for danger
+				if (bestDir == null || myLoc.add(bestDir).isOccupiable()) {
+					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
+						(location)->{
+							if (location.get(visibleRobotMap) > 0) {
+								return false;
+							}
+							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
+								return true;
+							}
+							if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && location.get(isDangerous) != isDangerousRunId) {
+								return true;
+							}
+							if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
+								me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
 
-							for (int i = 0; i < 8; i++) {
-								MapLocation adj = location.add(dirs[i]);
-								if (adj.isOnMap() && isFriendlyStructure(adj)) {
-									return true;
+								for (int i = 0; i < 8; i++) {
+									MapLocation adj = location.add(dirs[i]);
+									if (adj.isOnMap() && isFriendlyStructure(adj)) {
+										return true;
+									}
 								}
 							}
-						}
-						return false;
-					},
-					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-					(location)->{ return location.isOccupiable(); });
+							return false;
+						},
+						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+						(location)->{ return location.isOccupiable(); });
+					bestDir = myBfsSolver.nextStep();
+				}
 
 				if (bestDir != null && myLoc.add(bestDir).isOccupiable()) {
 					myAction = move(bestDir);
@@ -1236,10 +1251,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null && attackStatus == AttackStatusType.NO_ATTACK && !isGoodTurtlingLocation(myLoc)) {
-				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
-					(location)->{ return isGoodTurtlingLocation(location); },
-					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-					(location)->{ return location.isOccupiable(); });
+				Direction bestDir = myBfsSolver.nextStep();
+				if (bestDir == null) {
+					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
+						(location)->{ return isGoodTurtlingLocation(location); },
+						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+						(location)->{ return location.isOccupiable(); });
+					bestDir = myBfsSolver.nextStep();
+				}
 
 				if (bestDir == null) {
 					bestDir = dirs[rng.nextInt() % 8];
@@ -1298,14 +1317,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null) {
-				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
-					(location)->{
-						return !(visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc)) &&
-							location.distanceSquaredTo(myTarget) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
-							location.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1];
-					},
-					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-					(location)->{ return location.get(map) == MAP_PASSABLE; });
+				Direction bestDir = myBfsSolver.nextStep();
+				if (bestDir == null) {
+					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
+						(location)->{
+							return !(visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc)) &&
+								location.distanceSquaredTo(myTarget) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
+								location.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1];
+						},
+						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+						(location)->{ return location.get(map) == MAP_PASSABLE; });
+					bestDir = myBfsSolver.nextStep();
+				}
 
 				if (bestDir == null) {
 					bestDir = dirs[rng.nextInt() % 8];
