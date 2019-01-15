@@ -1283,9 +1283,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 				MapLocation newLoc = myLoc.add(bestDir);
 				if (newLoc.isOccupiable()) {
-					myAction = move(bestDir);
+					// Sometimes, it is a bad idea to move first
+					// Because of the defender's advantage: you move into their attack range, so they get the first shot
+					// We make an exception for our first turn, so that we actually try to move somewhere
+					boolean shouldMove = true;
+					if (me.turn > 1) {
+						shouldMove = false;
+						for (Robot r: visibleRobots) {
+							if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.id != me.id) {
+								shouldMove = true;
+								break;
+							}
+						}
+					}
+					if (shouldMove) {
+						myAction = move(bestDir);
+					}
 				}
-
 			}
 			return myAction;
 		}
