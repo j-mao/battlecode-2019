@@ -285,8 +285,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	//////// Functions to help with initialisation ////////
 
+	/**
+	 * Notes all dangerous cells that the unit can see
+	 * Not only just "dangerous", in the strict sense of the word, but also potentially dangerous
+	 * Prophet blind-spots are counted as dangerous because for goodness sake you have an enemy right next to you
+	 * The metric for that is, within a step of (0, 2) or (1, 1) of actually being in danger
+	 * This is to prevent awkward situations whereby in a single turn, a unit goes from being safe to being absolutely helpless
+	 */
 	private void noteDangerousCells() {
-		// TODO factor in preacher AoE
 		isDangerousRunId++;
 		for (Robot r: visibleRobots) {
 			if (isVisible(r) && r.team != me.team) {
@@ -297,11 +303,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						for (int j = -maxDispl; j <= maxDispl; j++) {
 							Direction dir = new Direction(i, j);
 							MapLocation target = location.add(dir);
-							if (target.isOnMap() &&
-								dir.getMagnitude() >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0] &&
-								dir.getMagnitude() <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]) {
-
-								target.set(isDangerous, isDangerousRunId);
+							if (target.isOnMap() && dir.getMagnitude() <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]) {
+								// Offset for the potentially dangerous metric
+								int offset = 2;
+								if (r.unit == SPECS.PREACHER) offset = 3; // Increase for AoE
+								for (int dx = -offset; dx <= offset; dx++) {
+									for (int dy = Math.abs(dx)-offset; dy <= offset-Math.abs(dx); dy++) {
+										MapLocation affected = target.add(new Direction(dx, dy));
+										if (affected.isOnMap()) {
+											affected.set(isDangerous, isDangerousRunId);
+										}
+									}
+								}
 							}
 						}
 					}
@@ -311,7 +324,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private void updateStructureCache() {
-		for (Robot r : visibleRobots) if (isVisible(r)) {
+		for (Robot r: visibleRobots) if (isVisible(r)) {
 
 			MapLocation location = createLocation(r);
 
@@ -411,12 +424,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private MapLocation createLocation(Robot r) {
-		if (r == null) {
-			throw new NullPointerException("Attempt to create MapLocation from a null robot");
-		}
-		if (!isVisible(r)) {
-			throw new IllegalArgumentException("Attempt to create MapLocation from invisible robot");
-		}
 		return new MapLocation(r.x, r.y);
 	}
 
@@ -468,12 +475,85 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return false;
 	}
 
-	public boolean isAggressiveRobot(int unitType) {
+	private boolean isAggressiveRobot(int unitType) {
 		return unitType == SPECS.CRUSADER || unitType == SPECS.PROPHET || unitType == SPECS.PREACHER;
 	}
 
 	private boolean isSquadUnitType(int unitType) {
 		return unitType == SPECS.PREACHER;
+	}
+
+	private int attackPriority(int unitType) {
+		// TODO Fine-tune these constants, possibly take into account resource reclaim
+		if (unitType == SPECS.CASTLE) {
+			return 8;
+		} else if (unitType == SPECS.CHURCH) {
+			return 2;
+		} else if (unitType == SPECS.PILGRIM) {
+			return 2;
+		} else if (unitType == SPECS.CRUSADER) {
+			return 6;
+		} else if (unitType == SPECS.PROPHET) {
+			return 4;
+		} else if (unitType == SPECS.PREACHER) {
+			return 10;
+		} else {
+			// probably invisible or an empty square
+			return 0;
+		}
+	}
+
+	private int friendlyFireBadness(int unitType) {
+		// TODO Friendly fire is different to attack priority and probably deserves its own constants
+		return attackPriority(unitType);
+	}
+
+	/**
+	 * Calculates the value of an attack by considering all of the units that are affected
+	 * If no enemies are harmed at all, then return Integer.MIN_VALUE
+	 * @param target The square being attacked. Must be inside attack and vision range.
+	 */
+	private int getAttackValue(MapLocation target) {
+		if (me.unit != SPECS.PREACHER) {
+			Robot what = getRobot(target.get(visibleRobotMap));
+			if (what == null || what.team == me.team) {
+				return Integer.MIN_VALUE;
+			}
+			return attackPriority(what.unit);
+		}
+		boolean useful = false;
+		int value = 0;
+		for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) {
+			MapLocation affected = target.add(new Direction(i, j));
+			if (affected.isOnMap()) {
+				int visibleState = affected.get(visibleRobotMap);
+				if (visibleState != MAP_EMPTY) {
+					if (visibleState != MAP_INVISIBLE) {
+						Robot what = getRobot(visibleState);
+						if (what.team == me.team) {
+							value -= friendlyFireBadness(what.unit);
+						} else {
+							value += attackPriority(what.unit);
+							useful = true;
+						}
+					} else {
+						KnownStructureType what = affected.get(knownStructures);
+						if (what != null) {
+							switch (what) {
+								case OUR_CASTLE:   value -= friendlyFireBadness(SPECS.CASTLE); break;
+								case OUR_CHURCH:   value -= friendlyFireBadness(SPECS.CHURCH); break;
+								case ENEMY_CASTLE: value += attackPriority(SPECS.CASTLE); useful = true; break;
+								case ENEMY_CHURCH: value += attackPriority(SPECS.CHURCH); useful = true; break;
+							}
+						}
+					}
+				}
+			}
+		}
+		if (useful) {
+			return value;
+		}
+		return Integer.MIN_VALUE;
 	}
 
 	private int distanceToNearestEnemyFromLocation(MapLocation source) {
@@ -524,16 +604,24 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private Action tryToAttack() {
-		// TODO factor in preacher AoE
+		// TODO should we choose not to attack if the value of the attack is negative?
+		// would be a shame if we got stuck in a situation where we got eaten alive but didn't want to attack
 		Action myAction = null;
-		for (Robot r: visibleRobots) {
-			if (isVisible(r)) {
-				MapLocation theirLoc = createLocation(r);
-				if (r.team != me.team &&
-					myLoc.distanceSquaredTo(theirLoc) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
-					myLoc.distanceSquaredTo(theirLoc) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+		int bestValue = Integer.MIN_VALUE;
+		int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].ATTACK_RADIUS[1]));
+		for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+			Direction dir = new Direction(i, j);
+			if (dir.getMagnitude() >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
+				dir.getMagnitude() <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
 
-					myAction = attack(myLoc.directionTo(createLocation(r)));
+				MapLocation location = myLoc.add(dir);
+				// Game spec prohibits attacking impassable terrain
+				if (location.isOnMap() && location.get(map) == MAP_PASSABLE) {
+					int altValue = getAttackValue(location);
+					if (altValue > bestValue) {
+						myAction = attack(dir);
+						bestValue = altValue;
+					}
 				}
 			}
 		}
@@ -541,6 +629,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	//////// Communications library ////////
+
 	private class Communicator {
 
 		private static final int NO_MESSAGE = -1;
@@ -810,7 +899,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			int enemiesSeenThisTurn = 0;
-			for (Robot robot : visibleRobots) {
+			for (Robot robot: visibleRobots) {
 				if (isVisible(robot) && robot.team != me.team) {
 					enemiesSeenThisTurn++;
 					if (!seenEnemies[robot.id]) {
@@ -995,25 +1084,26 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
 					(location)->{
-						if (location.get(visibleRobotMap) <= 0 &&
-							location.get(karboniteMap) &&
-							me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
-
+						if (location.get(visibleRobotMap) > 0) {
+							return false;
+						}
+						if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 							return true;
 						}
 						// TODO possible conflict with pilgrims never mining fuel
-						if (location.get(visibleRobotMap) <= 0 &&
-							location.get(fuelMap) &&
-							me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && karbonite > 0) {
-
+						if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && karbonite > 0) {
 							return true;
 						}
-						if (isFriendlyStructure(location) &&
-							(me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
-							 me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY)) {
-							return true;
-						}
+						if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
+							me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
 
+							for (int i = 0; i < 8; i++) {
+								MapLocation adj = location.add(dirs[i]);
+								if (adj.isOnMap() && isFriendlyStructure(adj)) {
+									return true;
+								}
+							}
+						}
 						return false;
 					},
 					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
