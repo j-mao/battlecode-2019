@@ -30,6 +30,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private int[][] visibleRobotMap;
 	private BoardSymmetryType symmetryStatus;
 
+	// Game staging constants
+	private static final int TURTLE_THRESHOLD = 50;
+
+	// Data left over from previous round
+	private int prevKarbonite;
+	private int prevFuel;
+
 	// Dangerous cells: use only if noteDangerousCells was called this round
 	private int[][] isDangerous;
 	private int isDangerousRunId;
@@ -60,6 +67,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// First turn initialisation
 		if (me.turn == 1) {
 			boardSize = map.length;
+
+			prevKarbonite = karbonite;
+			prevFuel = fuel;
 
 			isDangerous = new int[boardSize][boardSize];
 			knownStructures = new KnownStructureType[boardSize][boardSize];
@@ -97,6 +107,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			myAction = mySpecificRobotController.runTurn();
 		} catch (Throwable e) {
 			log("Exception caught: "+e.getMessage());
+		} finally {
+			prevKarbonite = karbonite;
+			prevFuel = fuel;
 		}
 
 		return myAction;
@@ -945,8 +958,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PREACHER;
 			} else if (isFirstCastle && me.turn == 1) {
 				toBuild = SPECS.PILGRIM;
-			} else {
-				// TODO maybe actually build some more units
+			} else if (me.turn < TURTLE_THRESHOLD && karbonite > prevKarbonite) {
+				toBuild = SPECS.PILGRIM;
+			} else if (me.turn > TURTLE_THRESHOLD) {
+				toBuild = SPECS.PROPHET;
 			}
 
 			if (toBuild != -1 &&
@@ -1078,8 +1093,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null && (
-				(myLoc.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) /* ||
-				(myLoc.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) */ )) {
+				(myLoc.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
+				(myLoc.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) )) {
 
 				myAction = mine();
 			}
@@ -1093,8 +1108,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 							return true;
 						}
-						// TODO possible conflict with pilgrims never mining fuel
-						if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && karbonite > 0) {
+						if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) {
 							return true;
 						}
 						if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
@@ -1110,7 +1124,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						return false;
 					},
 					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-					(location)->{ return location.get(map) == MAP_PASSABLE && location.get(isDangerous) != isDangerousRunId; });
+					(location)->{ return location.isOccupiable(); });
 
 				if (bestDir != null && myLoc.add(bestDir).isOccupiable()) {
 					myAction = move(bestDir);
@@ -1161,9 +1175,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			// TODO sync with castle signalling: currently they also signal for crusaders and prophets but only preachers listen
-			if (me.unit == SPECS.PREACHER &&
-				myAction == null &&
+			if (myAction == null &&
 				attackStatus == AttackStatusType.ATTACK_ONGOING &&
 				desiredLocation != null) {
 
@@ -1173,12 +1185,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			// TODO change this to turtling instead of going to enemy castle, upgrade to AttackerController when instructed
 			if (myAction == null && attackStatus == AttackStatusType.NO_ATTACK) {
 				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
-					(location)->{ return isEnemyStructure(location); },
+					(location)->{ return isGoodTurtlingLocation(location); },
 					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-					(location)->{ return location.get(map) == MAP_PASSABLE; });
+					(location)->{ return location.isOccupiable(); });
 
 				if (bestDir == null) {
 					bestDir = dirs[rng.nextInt() % 8];
