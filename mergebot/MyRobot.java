@@ -828,7 +828,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private AttackStatusType attackStatus;
 
-		private static final int INITIAL_LOCATION_SHARING_OFFSET = 6;
+		private static final int CASTLE_SECRET_TALK_OFFSET = 6;
 
 		CastleController() {
 			super();
@@ -879,11 +879,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// Send my castle location
 			if (me.turn == 1) {
-				myCastleTalk = myLoc.getX() + INITIAL_LOCATION_SHARING_OFFSET;
+				myCastleTalk = myLoc.getX() + CASTLE_SECRET_TALK_OFFSET;
 			} else if (me.turn == 2) {
-				myCastleTalk = myLoc.getY() + INITIAL_LOCATION_SHARING_OFFSET;
+				myCastleTalk = myLoc.getY() + CASTLE_SECRET_TALK_OFFSET;
 			} else if (me.turn == 3) {
 				myCastleTalk = 0;
+			} else if (me.turn == 4) {
+				myCastleTalk = CASTLE_SECRET_TALK_OFFSET;
 			}
 
 			// Read castle locations
@@ -895,7 +897,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (msg != Communicator.NO_MESSAGE) {
 							if (castleLocations.containsKey(r.id)) {
 								// Receiving y coordinate
-								MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg-INITIAL_LOCATION_SHARING_OFFSET);
+								MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg-CASTLE_SECRET_TALK_OFFSET);
 								castleLocations.put(r.id, where);
 								if (symmetryStatus != BoardSymmetryType.VER_SYMMETRICAL) {
 									attackTargetList.add(where.opposite(BoardSymmetryType.HOR_SYMMETRICAL));
@@ -905,7 +907,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								}
 							} else {
 								// Receiving x coordinate
-								castleLocations.put(r.id, new MapLocation(msg-INITIAL_LOCATION_SHARING_OFFSET, 0));
+								castleLocations.put(r.id, new MapLocation(msg-CASTLE_SECRET_TALK_OFFSET, 0));
 							}
 						}
 					}
@@ -983,44 +985,70 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
 				fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
 
-				if (toBuild == SPECS.PILGRIM) {
-					// TODO build towards resources rather than just anywhere
-					for (int i = 0; i < 8; i++) {
-						MapLocation location = myLoc.add(dirs[i]);
-						if (location.isOnMap() &&
-							location.get(map) == MAP_PASSABLE &&
-							location.get(visibleRobotMap) == MAP_EMPTY) {
-
-							myAction = buildUnit(toBuild, dirs[i]);
+				boolean isAllowedToBuild = true;
+				boolean requiredToNotify = false;
+				if (isAggressiveRobot(toBuild) && attackStatus == AttackStatusType.NO_ATTACK) {
+					requiredToNotify = true;
+					int myState = myCastleTalk - CASTLE_SECRET_TALK_OFFSET;
+					for (Integer castle: castleLocations.keySet()) {
+						Robot r = getRobot(castle);
+						int msg = communications.readCastle(r);
+						msg -= CASTLE_SECRET_TALK_OFFSET;
+						if ((msg+1)%3 == myState) {
+							isAllowedToBuild = false;
+							break;
+						} else if (msg == myState && r.id < me.id) {
+							isAllowedToBuild = false;
 							break;
 						}
 					}
-				} else {
-					// Builds towards the nearest enemy
+				}
 
-					Direction bestBuildDir = null;
-					int bestDistance = Integer.MAX_VALUE;
+				if (isAllowedToBuild) {
+					if (toBuild == SPECS.PILGRIM) {
+						// TODO build towards resources rather than just anywhere
+						for (int i = 0; i < 8; i++) {
+							MapLocation location = myLoc.add(dirs[i]);
+							if (location.isOnMap() &&
+								location.get(map) == MAP_PASSABLE &&
+								location.get(visibleRobotMap) == MAP_EMPTY) {
 
-					for (int i = 0; i < 8; i++) {
-						MapLocation location = myLoc.add(dirs[i]);
-						if (location.isOccupiable()) {
-							int d = distanceToNearestEnemyFromLocation(location);
-							if (d < bestDistance) {
-								bestBuildDir = dirs[i];
-								bestDistance = d;
+								myAction = buildUnit(toBuild, dirs[i]);
+								break;
+							}
+						}
+					} else {
+						// Builds towards the nearest enemy
+
+						Direction bestBuildDir = null;
+						int bestDistance = Integer.MAX_VALUE;
+
+						for (int i = 0; i < 8; i++) {
+							MapLocation location = myLoc.add(dirs[i]);
+							if (location.isOccupiable()) {
+								int d = distanceToNearestEnemyFromLocation(location);
+								if (d < bestDistance) {
+									bestBuildDir = dirs[i];
+									bestDistance = d;
+								}
+							}
+						}
+
+						if (bestBuildDir != null) {
+							myAction = buildUnit(toBuild, bestBuildDir);
+							if (toBuild == SPECS.CRUSADER) {
+								crusadersCreated++;
+							} else if (toBuild == SPECS.PROPHET) {
+								prophetsCreated++;
+							} else if (toBuild == SPECS.PREACHER) {
+								preachersCreated++;
 							}
 						}
 					}
 
-					if (bestBuildDir != null) {
-						myAction = buildUnit(toBuild, bestBuildDir);
-						if (toBuild == SPECS.CRUSADER) {
-							crusadersCreated++;
-						} else if (toBuild == SPECS.PROPHET) {
-							prophetsCreated++;
-						} else if (toBuild == SPECS.PREACHER) {
-							preachersCreated++;
-						}
+					// Build successful
+					if (myAction != null && requiredToNotify) {
+						myCastleTalk = (myCastleTalk - CASTLE_SECRET_TALK_OFFSET + 1) % 3 + CASTLE_SECRET_TALK_OFFSET;
 					}
 				}
 			}
@@ -1197,19 +1225,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		AttackerController(MapLocation newTarget, MapLocation newHome) {
 			super(newHome);
+			myTarget = newTarget;
 		}
 
 		@Override
 		Action runSpecificTurn() {
 
 			Action myAction = tryToAttack();
-
-			if (myAction == null &&
-				!myTarget.equals(myHome) &&
-				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
-
-				myTarget = myHome;
-			}
 
 			// TODO maybe go closer before downgrading to defence
 			// TODO broadcast attack success
@@ -1219,6 +1241,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 				mySpecificRobotController = new DefenderController(myHome);
 				return mySpecificRobotController.runSpecificTurn();
+			}
+
+			if (myAction == null &&
+				!myTarget.equals(myHome) &&
+				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+
+				myTarget = myHome;
 			}
 
 			if (myAction == null) {
