@@ -572,17 +572,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return Integer.MIN_VALUE;
 	}
 
-	private int distanceToNearestEnemyFromLocation(MapLocation source) {
-		// Excludes pilgrims
-		int ans = Integer.MAX_VALUE;
-		for (Robot robot: visibleRobots) {
-			if (isVisible(robot) && robot.team != me.team && robot.unit != SPECS.PILGRIM) {
-				ans = Math.min(ans, source.distanceSquaredTo(createLocation(robot)));
-			}
-		}
-		return ans;
-	}
-
 	//////// Action-specific functions ////////
 
 	private Action tryToGiveTowardsLocation(MapLocation target) {
@@ -960,7 +949,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PILGRIM;
 			} else if (me.turn < TURTLE_THRESHOLD && karbonite > prevKarbonite) {
 				toBuild = SPECS.PILGRIM;
-			} else if (me.turn > TURTLE_THRESHOLD) {
+			} else if (me.turn >= TURTLE_THRESHOLD) {
 				toBuild = SPECS.PROPHET;
 			}
 
@@ -987,36 +976,32 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					Direction bestBuildDir = null;
 					int bestDistance = Integer.MAX_VALUE;
 
-					for (int i = 0; i < 16; i++) {
-						MapLocation location = myLoc.add(ddirs[i]);
-						if (allowedLoc[i] &&
-							!alreadyBuilt[i] &&
-							location.isOnMap() &&
-							location.get(map) == MAP_PASSABLE &&
-							location.get(visibleRobotMap) == MAP_EMPTY) {
-
-							Direction alternative = buildDirectionForPreacherToReach(ddirs[i], false);
-							if (alternative != null) {
-								int d = distanceToNearestEnemyFromLocation(location);
-								if (d < bestDistance) {
-									bestGuardPost = i;
-									bestBuildDir = alternative;
-									bestDistance = d;
+					if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
+						for (int i = 0; i < 16; i++) {
+							MapLocation location = myLoc.add(ddirs[i]);
+							if (allowedLoc[i] && !alreadyBuilt[i] && location.isOccupiable()) {
+								Direction alternative = buildDirectionForPreacherToReach(ddirs[i], false);
+								if (alternative != null) {
+									int d = distanceToNearestEnemyFromLocation(location);
+									if (d < bestDistance) {
+										bestGuardPost = i;
+										bestBuildDir = alternative;
+										bestDistance = d;
+									}
 								}
 							}
 						}
+						if (bestDistance != Integer.MAX_VALUE) {
+							communications.sendRadio(myLoc.add(ddirs[bestGuardPost]).hashCode(), bestBuildDir.getMagnitude());
+							alreadyBuilt[bestGuardPost] = true;
+						}
 					}
-					if (bestDistance != Integer.MAX_VALUE) {
-						communications.sendRadio(myLoc.add(ddirs[bestGuardPost]).hashCode(), bestBuildDir.getMagnitude());
-						alreadyBuilt[bestGuardPost] = true;
-					} else {
-						// No government-certified allowedLoc, so just go somewhere decent
+
+					// No government-certified allowedLoc, so just go somewhere decent
+					if (bestDistance == Integer.MAX_VALUE) {
 						for (int i = 0; i < 8; i++) {
 							MapLocation location = myLoc.add(dirs[i]);
-							if (location.isOnMap() &&
-								location.get(map) == MAP_PASSABLE &&
-								location.get(visibleRobotMap) == MAP_EMPTY) {
-
+							if (location.isOccupiable()) {
 								int d = distanceToNearestEnemyFromLocation(location);
 								if (d < bestDistance) {
 									bestBuildDir = dirs[i];
@@ -1055,6 +1040,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			return null;
+		}
+
+		private int distanceToNearestEnemyFromLocation(MapLocation source) {
+			// Excludes pilgrims
+			int ans = Integer.MAX_VALUE;
+			if (!attackTargetList.isEmpty()) {
+				ans = source.distanceSquaredTo(attackTargetList.peek());
+			}
+			for (Robot robot: visibleRobots) {
+				if (isVisible(robot) && robot.team != me.team && robot.unit != SPECS.PILGRIM) {
+					ans = Math.min(ans, source.distanceSquaredTo(createLocation(robot)));
+				}
+			}
+			return ans;
 		}
 	}
 
@@ -1108,7 +1107,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 							return true;
 						}
-						if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) {
+						if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && location.get(isDangerous) != isDangerousRunId) {
 							return true;
 						}
 						if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
@@ -1185,7 +1184,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			if (myAction == null && attackStatus == AttackStatusType.NO_ATTACK) {
+			if (myAction == null && attackStatus == AttackStatusType.NO_ATTACK && !isGoodTurtlingLocation(myLoc)) {
 				Direction bestDir = myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
 					(location)->{ return isGoodTurtlingLocation(location); },
 					(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
