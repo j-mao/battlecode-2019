@@ -48,9 +48,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private boolean[][] knownStructuresSeenBefore; // whether or not each structure is stored in the lists below
 	private LinkedList<MapLocation> knownStructuresCoords;
 
-	// Instant messaging
-	private static final int ATTACK_DOWNGRADE_MSG = 0xffff;
-
 	// Utilities
 	private SimpleRandom rng;
 	private Communicator communications;
@@ -833,27 +830,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private static final int INITIAL_LOCATION_SHARING_OFFSET = 6;
 
-		private final Direction[] ddirs = {
-			new Direction(2, 2),
-			new Direction(1, 2),
-			new Direction(0, 2),
-			new Direction(-1, 2),
-			new Direction(-2, 2),
-			new Direction(-2, 1),
-			new Direction(-2, 0),
-			new Direction(-2, -1),
-			new Direction(-2, -2),
-			new Direction(-1, -2),
-			new Direction(0, -2),
-			new Direction(1, -2),
-			new Direction(2, -2),
-			new Direction(2, -1),
-			new Direction(2, 0),
-			new Direction(2, 1)
-		};
-		private boolean[] allowedLoc = {true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false};
-		private boolean[] alreadyBuilt;
-
 		CastleController() {
 			super();
 
@@ -869,8 +845,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			seenEnemies = new boolean[SPECS.MAX_ID+1];
 
 			attackStatus = AttackStatusType.NO_ATTACK;
-
-			alreadyBuilt = new boolean[16];
 		}
 
 		@Override
@@ -880,18 +854,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// Initialise
 			if (me.turn == 1) {
-				// Sanitise allowed locations
-				for (int i = 0; i < 16; i += 2) {
-					MapLocation location = myLoc.add(ddirs[i]);
-					if (!location.isOnMap() ||
-						location.get(map) == MAP_IMPASSABLE ||
-						buildDirectionForPreacherToReach(ddirs[i], true) == null) {
-
-						allowedLoc[(i+1)%16] = true;
-						allowedLoc[(i+15)%16] = true;
-					}
-				}
-
 				// Determine if we are the first castle
 				isFirstCastle = true;
 				for (Robot r: visibleRobots) {
@@ -951,38 +913,41 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			// Check if we are under attack
-			int enemiesSeenThisTurn = 0;
+			MapLocation imminentAttack = null;
 			for (Robot robot: visibleRobots) {
 				if (isVisible(robot) && robot.team != me.team) {
-					enemiesSeenThisTurn++;
 					if (!seenEnemies[robot.id]) {
 						if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
 						else if (robot.unit == SPECS.PROPHET) enemyProphets++;
 						else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
 						seenEnemies[robot.id] = true;
 					}
+					if (imminentAttack == null ||
+						myLoc.distanceSquaredTo(createLocation(robot)) < myLoc.distanceSquaredTo(imminentAttack)) {
+
+						imminentAttack = createLocation(robot);
+					}
 				}
 			}
 
-			if (enemiesSeenThisTurn == 0) {
+			if (imminentAttack == null) {
 				if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
-					// Send message to units saying that attack is over
+					// TODO are we really rushing though?
+					// Reset these because these units will go and rush a castle
+					crusadersCreated = prophetsCreated = preachersCreated = 0;
+					enemyCrusaders = enemyProphets = enemyPreachers = 0;
+				}
+				attackStatus = AttackStatusType.NO_ATTACK;
+			} else {
+				if (attackStatus == AttackStatusType.NO_ATTACK) {
 					int broadcastDistance = 0;
 					for (Robot robot: visibleRobots) {
 						if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit)) {
 							broadcastDistance = Math.max(broadcastDistance, myLoc.distanceSquaredTo(createLocation(robot)));
 						}
 					}
-					communications.sendRadio(ATTACK_DOWNGRADE_MSG, broadcastDistance);
-
-					// TODO are we really rushing though?
-					// Reset these because these units will go and rush a castle
-					crusadersCreated = prophetsCreated = preachersCreated = 0;
-					enemyCrusaders = enemyProphets = enemyPreachers = 0;
-					for (int i = 0; i < 16; i++) alreadyBuilt[i] = false;
+					communications.sendRadio(imminentAttack.hashCode(), broadcastDistance);
 				}
-				attackStatus = AttackStatusType.NO_ATTACK;
-			} else {
 				attackStatus = AttackStatusType.ATTACK_ONGOING;
 			}
 
@@ -1033,41 +998,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				} else {
 					// Builds towards the nearest enemy
 
-					int bestGuardPost = -1;
 					Direction bestBuildDir = null;
 					int bestDistance = Integer.MAX_VALUE;
 
-					if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
-						for (int i = 0; i < 16; i++) {
-							MapLocation location = myLoc.add(ddirs[i]);
-							if (allowedLoc[i] && !alreadyBuilt[i] && location.isOccupiable()) {
-								Direction alternative = buildDirectionForPreacherToReach(ddirs[i], false);
-								if (alternative != null) {
-									int d = distanceToNearestEnemyFromLocation(location);
-									if (d < bestDistance) {
-										bestGuardPost = i;
-										bestBuildDir = alternative;
-										bestDistance = d;
-									}
-								}
-							}
-						}
-						if (bestDistance != Integer.MAX_VALUE) {
-							communications.sendRadio(myLoc.add(ddirs[bestGuardPost]).hashCode(), bestBuildDir.getMagnitude());
-							alreadyBuilt[bestGuardPost] = true;
-						}
-					}
-
-					// No government-certified allowedLoc, so just go somewhere decent
-					if (bestDistance == Integer.MAX_VALUE) {
-						for (int i = 0; i < 8; i++) {
-							MapLocation location = myLoc.add(dirs[i]);
-							if (location.isOccupiable()) {
-								int d = distanceToNearestEnemyFromLocation(location);
-								if (d < bestDistance) {
-									bestBuildDir = dirs[i];
-									bestDistance = d;
-								}
+					for (int i = 0; i < 8; i++) {
+						MapLocation location = myLoc.add(dirs[i]);
+						if (location.isOccupiable()) {
+							int d = distanceToNearestEnemyFromLocation(location);
+							if (d < bestDistance) {
+								bestBuildDir = dirs[i];
+								bestDistance = d;
 							}
 						}
 					}
@@ -1085,22 +1025,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			return myAction;
-		}
-
-		private Direction buildDirectionForPreacherToReach(Direction target, boolean ignoreUnits) {
-			MapLocation targetLoc = myLoc.add(target);
-			for (int i = 0; i < 8; i++) {
-				MapLocation middle = myLoc.add(dirs[i]);
-				if (middle.isOnMap() &&
-					middle.get(map) == MAP_PASSABLE &&
-					(ignoreUnits || middle.get(visibleRobotMap) == MAP_EMPTY)) {
-
-					if (middle.distanceSquaredTo(targetLoc) <= SPECS.UNITS[SPECS.PREACHER].SPEED) {
-						return dirs[i];
-					}
-				}
-			}
-			return null;
 		}
 
 		private int distanceToNearestEnemyFromLocation(MapLocation source) {
@@ -1204,20 +1128,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class DefenderController extends SpecificRobotController {
 
-		private AttackStatusType attackStatus;
 		private MapLocation desiredLocation;
 
 		DefenderController() {
 			super();
 
-			attackStatus = AttackStatusType.NO_ATTACK;
 			desiredLocation = null;
 		}
 
 		DefenderController(MapLocation newHome) {
 			super(newHome);
 
-			attackStatus = AttackStatusType.NO_ATTACK;
 			desiredLocation = null;
 		}
 
@@ -1226,31 +1147,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = tryToAttack();
 
-			// Check for the following messages from castle:
-			// - first-turn location assignment
-			// - attack status downgrade message
+			// Check for assignment from castle
 			for (Robot r: visibleRobots) {
 				if (isVisible(r) && isRadioing(r) && r.team == me.team && r.unit == SPECS.CASTLE) {
-					if (me.turn == 1) {
-						desiredLocation = new MapLocation(communications.readRadio(r));
-						attackStatus = AttackStatusType.ATTACK_ONGOING;
-					} else if (communications.readRadio(r) == ATTACK_DOWNGRADE_MSG) {
-						attackStatus = AttackStatusType.NO_ATTACK;
-					}
+					mySpecificRobotController = new AttackerController(new MapLocation(communications.readRadio(r)), myHome);
+					return mySpecificRobotController.runSpecificTurn();
 				}
 			}
 
-			if (myAction == null &&
-				attackStatus == AttackStatusType.ATTACK_ONGOING &&
-				desiredLocation != null) {
-
-				if (desiredLocation.isOccupiable()) {
-					myAction = move(myLoc.directionTo(desiredLocation));
-					desiredLocation = null;
-				}
-			}
-
-			if (myAction == null && attackStatus == AttackStatusType.NO_ATTACK && !isGoodTurtlingLocation(myLoc)) {
+			if (myAction == null && !isGoodTurtlingLocation(myLoc)) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null) {
 					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
