@@ -856,10 +856,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private static final int CASTLE_SECRET_TALK_OFFSET = 6;
 
-		private static final int SWARM_THRESHOLD = 15;
+		private static final int SWARM_THRESHOLD = 10;
 
 		// Radio of units, assumes crusader <= preacher <= prophet
-		private final int CRUSADER_TO_PREACHER = 2;
+		private final int CRUSADER_TO_PREACHER = 100;
 		private final int PREACHER_TO_PROPHET = 2;
 
 		CastleController() {
@@ -992,7 +992,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				friendlyUnits[SPECS.PILGRIM] < (numKarbonite+5)/2) {
 
 				toBuild = SPECS.PILGRIM;
-			} else if (me.turn >= KARB_RESERVE_THRESHOLD || friendlyUnits[SPECS.PILGRIM] >= (numKarbonite+5)/2) {
+			} else if (me.turn >= KARB_RESERVE_THRESHOLD) {
 				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+5)/2) {
 					toBuild = SPECS.PILGRIM;
 				} else if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
@@ -1092,7 +1092,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 				int nearbyFriendlyAttackers = 0;
 				for (Robot r: visibleRobots) {
-					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit)) {
+					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.unit != SPECS.PROPHET) {
 						nearbyFriendlyAttackers++;
 					}
 				}
@@ -1108,7 +1108,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int getReasonableBroadcastDistance() {
 			int distance = 0;
 			for (Robot robot: visibleRobots) {
-				if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit)) {
+				if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit) && robot.unit != SPECS.PROPHET) {
 					distance = Math.max(distance, myLoc.distanceSquaredTo(createLocation(robot)));
 				}
 			}
@@ -1243,12 +1243,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = tryToAttack();
 
 			// Check for assignment from castle
-			for (Robot r: visibleRobots) {
-				if (isRadioing(r) && (isVisible(r) || (r.team == me.team && r.unit == SPECS.CASTLE))) {
-					int what = communications.readRadio(r);
-					if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
-						mySpecificRobotController = new AttackerController(new MapLocation(what&0xfff), myHome);
-						return mySpecificRobotController.runSpecificTurn();
+			if (me.unit != SPECS.PROPHET) { // Rangers stay at the turtle
+				for (Robot r: visibleRobots) {
+					if (isRadioing(r)) {
+						int what = communications.readRadio(r);
+						if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
+							mySpecificRobotController = new AttackerController(new MapLocation(what&0xfff), myHome);
+							return mySpecificRobotController.runSpecificTurn();
+						}
 					}
 				}
 			}
@@ -1308,7 +1310,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null &&
 				myTarget.equals(myHome) &&
 				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[SPECS.CASTLE].VISION_RADIUS) {
-
 				mySpecificRobotController = new DefenderController(myHome);
 				return mySpecificRobotController.runSpecificTurn();
 			}
