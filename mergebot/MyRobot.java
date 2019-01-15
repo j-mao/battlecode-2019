@@ -507,20 +507,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private int attackPriority(int unitType) {
 		// TODO Fine-tune these constants, possibly take into account resource reclaim
+		// There is also a bonus of 1 point for every invisible square you hit (in getAttackValue)
 		if (unitType == SPECS.CASTLE) {
-			return 8;
+			return 800;
 		} else if (unitType == SPECS.CHURCH) {
-			return 2;
+			return 200;
 		} else if (unitType == SPECS.PILGRIM) {
-			return 2;
+			return 200;
 		} else if (unitType == SPECS.CRUSADER) {
-			return 6;
+			return 600;
 		} else if (unitType == SPECS.PROPHET) {
-			return 4;
+			return 400;
 		} else if (unitType == SPECS.PREACHER) {
-			return 10;
+			return 1000;
 		} else {
-			// probably invisible or an empty square
 			return 0;
 		}
 	}
@@ -567,6 +567,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								case ENEMY_CASTLE: value += attackPriority(SPECS.CASTLE); useful = true; break;
 								case ENEMY_CHURCH: value += attackPriority(SPECS.CHURCH); useful = true; break;
 							}
+						} else {
+							// Speculate. Maybe we could gain out of this.
+							value++;
 						}
 					}
 				}
@@ -932,6 +935,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			int distressBroadcastDistance = 0;
 			if (imminentAttack == null) {
 				if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
 					// TODO are we really rushing though?
@@ -942,13 +946,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				attackStatus = AttackStatusType.NO_ATTACK;
 			} else {
 				if (attackStatus == AttackStatusType.NO_ATTACK) {
-					int broadcastDistance = 0;
 					for (Robot robot: visibleRobots) {
 						if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit)) {
-							broadcastDistance = Math.max(broadcastDistance, myLoc.distanceSquaredTo(createLocation(robot)));
+							distressBroadcastDistance = Math.max(distressBroadcastDistance, myLoc.distanceSquaredTo(createLocation(robot)));
 						}
 					}
-					communications.sendRadio(imminentAttack.hashCode(), broadcastDistance);
 				}
 				attackStatus = AttackStatusType.ATTACK_ONGOING;
 			}
@@ -1047,10 +1049,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 
 					// Build successful
-					if (myAction != null && requiredToNotify) {
-						myCastleTalk = (myCastleTalk - CASTLE_SECRET_TALK_OFFSET + 1) % 3 + CASTLE_SECRET_TALK_OFFSET;
+					if (myAction != null) {
+						if (requiredToNotify) {
+							myCastleTalk = (myCastleTalk - CASTLE_SECRET_TALK_OFFSET + 1) % 3 + CASTLE_SECRET_TALK_OFFSET;
+						}
+						if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
+							distressBroadcastDistance = Math.max(distressBroadcastDistance, 2);
+						}
 					}
 				}
+			}
+
+			if (distressBroadcastDistance > 0) {
+				communications.sendRadio(imminentAttack.hashCode(), distressBroadcastDistance);
 			}
 			return myAction;
 		}
@@ -1243,6 +1254,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				return mySpecificRobotController.runSpecificTurn();
 			}
 
+			// Please make sure this comes after the downgrade code
+			// Otherwise the robot could repeatedly upgrade/downgrade in an infinite loop
 			if (myAction == null &&
 				!myTarget.equals(myHome) &&
 				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
