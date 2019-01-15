@@ -334,6 +334,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								// Offset for the potentially dangerous metric
 								int offset = 2;
 								if (r.unit == SPECS.PREACHER) offset = 3; // Increase for AoE
+								if (r.unit == SPECS.PROPHET) offset = 0; // Without this, we can go from not being able to see a ranger 
+								// to being within its 'isDangerous' in one move, hence causing the weird back and forth behavour
 								for (int dx = -offset; dx <= offset; dx++) {
 									for (int dy = Math.abs(dx)-offset; dy <= offset-Math.abs(dx); dy++) {
 										MapLocation affected = target.add(new Direction(dx, dy));
@@ -852,6 +854,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private static final int CASTLE_SECRET_TALK_OFFSET = 6;
 
+		// Radio of units, assumes crusader <= preacher <= prophet
+		private final int CRUSADER_TO_PREACHER = 2;
+		private final int PREACHER_TO_PROPHET = 2;
+
 		CastleController() {
 			super();
 
@@ -989,11 +995,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (me.turn >= KARB_RESERVE_THRESHOLD || friendlyUnits[SPECS.PILGRIM] >= (numKarbonite+5)/2) {
 				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+5)/2) {
 					toBuild = SPECS.PILGRIM;
-				} else if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER] &&
-					friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.PROPHET]) {
+				} else if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
+					friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
 
 					toBuild = SPECS.PREACHER;
-				} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]) {
+				} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {
 					toBuild = SPECS.PROPHET;
 				} else {
 					toBuild = SPECS.CRUSADER;
@@ -1114,7 +1120,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class PilgrimController extends SpecificRobotController {
 
-		private final int DANGER_THRESHOLD = 5;
+		private final int DANGER_THRESHOLD = 8;
 
 		PilgrimController() {
 			super();
@@ -1146,14 +1152,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null ||
-					myLoc.add(bestDir).isOccupiable() ||
-					myLoc.add(bestDir).get(isDangerous) <= me.turn-DANGER_THRESHOLD) {
-
+					!myLoc.add(bestDir).isOccupiable() ||
+					myLoc.add(bestDir).get(isDangerous) == me.turn) {
 					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
 							if (location.get(visibleRobotMap) > 0) {
 								return false;
 							}
+
 							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 								return true;
 							}
@@ -1173,7 +1179,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							return false;
 						},
 						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-						(location)->{ return location.isOccupiable(); });
+						(location)->{ return location.isOccupiable() && location.get(isDangerous) < me.turn-DANGER_THRESHOLD; });
 					bestDir = myBfsSolver.nextStep();
 				}
 
