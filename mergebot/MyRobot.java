@@ -40,7 +40,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private int prevFuel;
 
 	// Dangerous cells: use only if noteDangerousCells was called this round
-	private int[][] isDangerous;
+	private int[][] isDangerous;   // whether being here can eventually leave us with no way out
+	private int[][] veryDangerous; // whether this square is under attack
 
 	// Known structures
 	private KnownStructureType[][] knownStructures;
@@ -73,9 +74,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			numFuel = 0;
 
 			isDangerous = new int[boardSize][boardSize];
+			veryDangerous = new int[boardSize][boardSize];
 			// For compatability with DANGER_THRESHOLD
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
 				isDangerous[j][i] = -100;
+				veryDangerous[j][i] = -100;
 			}
 			knownStructures = new KnownStructureType[boardSize][boardSize];
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
@@ -335,7 +338,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 									for (int dy = Math.abs(dx)-offset; dy <= offset-Math.abs(dx); dy++) {
 										MapLocation affected = target.add(new Direction(dx, dy));
 										if (affected.isOnMap()) {
-											affected.set(isDangerous, me.turn);
+											if (affected.get(map) == MAP_PASSABLE) {
+												affected.set(isDangerous, me.turn);
+											}
+											if (target.distanceSquaredTo(affected) <= SPECS.UNITS[r.unit].DAMAGE_SPREAD) {
+												affected.set(veryDangerous, me.turn);
+											}
 										}
 									}
 								}
@@ -612,6 +620,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (dir.getMagnitude() <= maxSpeed) {
 				MapLocation location = myLoc.add(dir);
 				if (location.isOccupiable() && location.get(isDangerous) != me.turn) {
+					return move(dir);
+				}
+			}
+		}
+		for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+			Direction dir = new Direction(i, j);
+			if (dir.getMagnitude() <= maxSpeed) {
+				MapLocation location = myLoc.add(dir);
+				if (location.isOccupiable() && location.get(veryDangerous) != me.turn) {
 					return move(dir);
 				}
 			}
