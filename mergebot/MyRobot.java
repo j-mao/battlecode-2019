@@ -41,7 +41,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Dangerous cells: use only if noteDangerousCells was called this round
 	private int[][] isDangerous;
-	private int isDangerousRunId;
 
 	// Known structures
 	private KnownStructureType[][] knownStructures;
@@ -74,6 +73,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			numFuel = 0;
 
 			isDangerous = new int[boardSize][boardSize];
+			// For compatability with DANGER_THRESHOLD
+			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
+				isDangerous[j][i] = -100;
+			}
 			knownStructures = new KnownStructureType[boardSize][boardSize];
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
 			knownStructuresCoords = new LinkedList<>();
@@ -315,7 +318,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	 * This is to prevent awkward situations whereby in a single turn, a unit goes from being safe to being absolutely helpless
 	 */
 	private void noteDangerousCells() {
-		isDangerousRunId++;
 		for (Robot r: visibleRobots) {
 			if (isVisible(r) && r.team != me.team) {
 				if (SPECS.UNITS[r.unit].ATTACK_RADIUS != null) {
@@ -333,7 +335,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 									for (int dy = Math.abs(dx)-offset; dy <= offset-Math.abs(dx); dy++) {
 										MapLocation affected = target.add(new Direction(dx, dy));
 										if (affected.isOnMap()) {
-											affected.set(isDangerous, isDangerousRunId);
+											affected.set(isDangerous, me.turn);
 										}
 									}
 								}
@@ -609,7 +611,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Direction dir = new Direction(i, j);
 			if (dir.getMagnitude() <= maxSpeed) {
 				MapLocation location = myLoc.add(dir);
-				if (location.isOccupiable() && location.get(isDangerous) != isDangerousRunId) {
+				if (location.isOccupiable() && location.get(isDangerous) != me.turn) {
 					return move(dir);
 				}
 			}
@@ -886,8 +888,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (me.turn == 2) {
 				myCastleTalk = myLoc.getY() + CASTLE_SECRET_TALK_OFFSET;
 			} else if (me.turn == 3) {
-				myCastleTalk = 0;
-			} else if (me.turn == 4) {
 				myCastleTalk = CASTLE_SECRET_TALK_OFFSET;
 			}
 
@@ -897,8 +897,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				for (Robot r: visibleRobots) {
 					if (!isVisible(r) || (r.team == me.team && r.unit == SPECS.CASTLE)) {
 						int msg = communications.readCastle(r);
-						if (msg != Communicator.NO_MESSAGE) {
-							if (castleLocations.containsKey(r.id)) {
+						if (msg >= CASTLE_SECRET_TALK_OFFSET) {
+							if (castleLocations.containsKey(r.id) && castleLocations.get(r.id).getY() == -1) {
 								// Receiving y coordinate
 								MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg-CASTLE_SECRET_TALK_OFFSET);
 								castleLocations.put(r.id, where);
@@ -910,7 +910,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								}
 							} else {
 								// Receiving x coordinate
-								castleLocations.put(r.id, new MapLocation(msg-CASTLE_SECRET_TALK_OFFSET, 0));
+								castleLocations.put(r.id, new MapLocation(msg-CASTLE_SECRET_TALK_OFFSET, -1));
 							}
 						}
 					}
@@ -994,14 +994,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					int myState = myCastleTalk - CASTLE_SECRET_TALK_OFFSET;
 					for (Integer castle: castleLocations.keySet()) {
 						Robot r = getRobot(castle);
-						int msg = communications.readCastle(r);
-						msg -= CASTLE_SECRET_TALK_OFFSET;
-						if ((msg+1)%3 == myState) {
-							isAllowedToBuild = false;
-							break;
-						} else if (msg == myState && r.id < me.id) {
-							isAllowedToBuild = false;
-							break;
+						if (r != null) {
+							int msg = communications.readCastle(r);
+							msg -= CASTLE_SECRET_TALK_OFFSET;
+							if ((msg+1)%3 == myState) {
+								isAllowedToBuild = false;
+								break;
+							} else if (msg == myState && r.id < me.id) {
+								isAllowedToBuild = false;
+								break;
+							}
 						}
 					}
 				}
@@ -1095,6 +1097,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class PilgrimController extends SpecificRobotController {
 
+		private final int DANGER_THRESHOLD = 5;
+
 		PilgrimController() {
 			super();
 		}
@@ -1105,7 +1109,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 			noteDangerousCells();
 
-			if (myAction == null && myLoc.get(isDangerous) == isDangerousRunId) {
+			if (myAction == null && myLoc.get(isDangerous) == me.turn) {
 				myAction = tryToGoSomewhereNotDangerous(2, SPECS.UNITS[me.unit].SPEED);
 			}
 
@@ -1124,8 +1128,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.nextStep();
-				// TODO check for danger
-				if (bestDir == null || myLoc.add(bestDir).isOccupiable()) {
+				if (bestDir == null ||
+					myLoc.add(bestDir).isOccupiable() ||
+					myLoc.add(bestDir).get(isDangerous) <= me.turn-DANGER_THRESHOLD) {
+
 					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
 							if (location.get(visibleRobotMap) > 0) {
@@ -1134,7 +1140,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 								return true;
 							}
-							if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && location.get(isDangerous) != isDangerousRunId) {
+							if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && location.get(isDangerous) <= me.turn-DANGER_THRESHOLD) {
 								return true;
 							}
 							if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
@@ -1154,7 +1160,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					bestDir = myBfsSolver.nextStep();
 				}
 
-				if (bestDir != null && myLoc.add(bestDir).isOccupiable()) {
+				if (bestDir != null &&
+					myLoc.add(bestDir).isOccupiable() &&
+					myLoc.add(bestDir).get(isDangerous) <= me.turn-DANGER_THRESHOLD) {
+
 					myAction = move(bestDir);
 				} else {
 					myAction = tryToGoSomewhereNotDangerous(2, SPECS.UNITS[me.unit].SPEED);
