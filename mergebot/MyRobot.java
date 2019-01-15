@@ -48,6 +48,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private boolean[][] knownStructuresSeenBefore; // whether or not each structure is stored in the lists below
 	private LinkedList<MapLocation> knownStructuresCoords;
 
+	// Instant messaging
+	private static final int LONG_DISTANCE_MASK = 0xa000;
+
 	// Utilities
 	private SimpleRandom rng;
 	private Communicator communications;
@@ -217,7 +220,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return x >= 0 && x < boardSize && y >= 0 && y < boardSize;
 		}
 
-		// TODO should we change all calls to BfsSolver.solve to use MapLocation.isOccupiable as part of their visit condition?
 		boolean isOccupiable() {
 			return isOnMap() && get(map) == MAP_PASSABLE && get(visibleRobotMap) <= 0;
 		}
@@ -689,8 +691,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		int readCastle(Robot broadcaster) {
 			// Prevent attempting to decode before robot was born
-			if (broadcaster.turn == 0)
-				return -1;
+			if (broadcaster.turn == 0 || (broadcaster.turn == 1 && me.id == broadcaster.id))
+				return NO_MESSAGE;
 			return broadcaster.castle_talk
 				^ CASTLE_PAD
 				^ (Math.abs(SimpleRandom.advance(broadcaster.id)) % CASTLE_MAX);
@@ -854,6 +856,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private static final int CASTLE_SECRET_TALK_OFFSET = 6;
 
+		private static final int SWARM_THRESHOLD = 15;
+
 		// Radio of units, assumes crusader <= preacher <= prophet
 		private final int CRUSADER_TO_PREACHER = 2;
 		private final int PREACHER_TO_PROPHET = 2;
@@ -969,11 +973,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				attackStatus = AttackStatusType.NO_ATTACK;
 			} else {
 				if (attackStatus == AttackStatusType.NO_ATTACK) {
-					for (Robot robot: visibleRobots) {
-						if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit)) {
-							distressBroadcastDistance = Math.max(distressBroadcastDistance, myLoc.distanceSquaredTo(createLocation(robot)));
-						}
-					}
+					distressBroadcastDistance = getReasonableBroadcastDistance();
 				}
 				attackStatus = AttackStatusType.ATTACK_ONGOING;
 			}
@@ -1086,9 +1086,33 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (distressBroadcastDistance > 0) {
-				communications.sendRadio(imminentAttack.hashCode(), distressBroadcastDistance);
+				communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, distressBroadcastDistance);
+			} else {
+				// Maybe we are in a good position... attack?
+
+				int nearbyFriendlyAttackers = 0;
+				for (Robot r: visibleRobots) {
+					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit)) {
+						nearbyFriendlyAttackers++;
+					}
+				}
+				if (nearbyFriendlyAttackers >= SWARM_THRESHOLD) {
+					MapLocation where = attackTargetList.poll();
+					communications.sendRadio(where.hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance());
+					attackTargetList.add(where);
+				}
 			}
 			return myAction;
+		}
+
+		private int getReasonableBroadcastDistance() {
+			int distance = 0;
+			for (Robot robot: visibleRobots) {
+				if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit)) {
+					distance = Math.max(distance, myLoc.distanceSquaredTo(createLocation(robot)));
+				}
+			}
+			return distance;
 		}
 
 		private int distanceToNearestEnemyFromLocation(MapLocation source) {
@@ -1220,9 +1244,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// Check for assignment from castle
 			for (Robot r: visibleRobots) {
-				if (isVisible(r) && isRadioing(r) && r.team == me.team && r.unit == SPECS.CASTLE) {
-					mySpecificRobotController = new AttackerController(new MapLocation(communications.readRadio(r)), myHome);
-					return mySpecificRobotController.runSpecificTurn();
+				if (isRadioing(r) && (isVisible(r) || (r.team == me.team && r.unit == SPECS.CASTLE))) {
+					int what = communications.readRadio(r);
+					if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
+						mySpecificRobotController = new AttackerController(new MapLocation(what&0xfff), myHome);
+						return mySpecificRobotController.runSpecificTurn();
+					}
 				}
 			}
 
@@ -1297,7 +1324,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.nextStep();
-				if (bestDir == null) {
+				if (bestDir == null || !myLoc.add(bestDir).isOccupiable()) {
 					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
 							return !(visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc)) &&
@@ -1305,7 +1332,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								location.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1];
 						},
 						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-						(location)->{ return location.get(map) == MAP_PASSABLE; });
+						(location)->{ return location.isOccupiable(); });
 					bestDir = myBfsSolver.nextStep();
 				}
 
