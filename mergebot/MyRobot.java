@@ -52,7 +52,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// Initialise metadata for this turn
 		visibleRobots = getVisibleRobots();
 		visibleRobotMap = getVisibleRobotMap();
-		myLoc = new MapLocation(me);
+		myLoc = createLocation(me);
 
 		// First turn initialisation
 		if (me.turn == 1) {
@@ -151,17 +151,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		MapLocation(int valX, int valY) {
 			x = valX;
 			y = valY;
-		}
-
-		MapLocation(Robot r) {
-			if (r == null) {
-				throw new NullPointerException("Attempt to create MapLocation from a null robot");
-			}
-			if (!isVisible(r)) {
-				throw new IllegalArgumentException("Attempt to create MapLocation from invisible robot");
-			}
-			x = r.x;
-			y = r.y;
 		}
 
 		MapLocation(int hashVal) {
@@ -302,7 +291,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		for (Robot r: visibleRobots) {
 			if (isVisible(r) && r.team != me.team) {
 				if (SPECS.UNITS[r.unit].ATTACK_RADIUS != null) {
-					MapLocation location = new MapLocation(r);
+					MapLocation location = createLocation(r);
 					int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[r.unit].ATTACK_RADIUS[1]));
 					for (int i = -maxDispl; i <= maxDispl; i++) {
 						for (int j = -maxDispl; j <= maxDispl; j++) {
@@ -324,7 +313,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private void updateStructureCache() {
 		for (Robot r : visibleRobots) if (isVisible(r)) {
 
-			MapLocation location = new MapLocation(r);
+			MapLocation location = createLocation(r);
 
 			if (r.unit == SPECS.CASTLE && r.team == me.team) {
 				location.set(knownStructures, KnownStructureType.OUR_CASTLE);
@@ -421,6 +410,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return attack(dir.getX(), dir.getY());
 	}
 
+	private MapLocation createLocation(Robot r) {
+		if (r == null) {
+			throw new NullPointerException("Attempt to create MapLocation from a null robot");
+		}
+		if (!isVisible(r)) {
+			throw new IllegalArgumentException("Attempt to create MapLocation from invisible robot");
+		}
+		return new MapLocation(r.x, r.y);
+	}
+
 	private boolean isStructure(int unitType) {
 		return unitType == SPECS.CASTLE || unitType == SPECS.CHURCH;
 	}
@@ -482,7 +481,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		int ans = Integer.MAX_VALUE;
 		for (Robot robot: visibleRobots) {
 			if (isVisible(robot) && robot.team != me.team && robot.unit != SPECS.PILGRIM) {
-				ans = Math.min(ans, source.distanceSquaredTo(new MapLocation(robot)));
+				ans = Math.min(ans, source.distanceSquaredTo(createLocation(robot)));
 			}
 		}
 		return ans;
@@ -529,12 +528,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		Action myAction = null;
 		for (Robot r: visibleRobots) {
 			if (isVisible(r)) {
-				MapLocation theirLoc = new MapLocation(r);
+				MapLocation theirLoc = createLocation(r);
 				if (r.team != me.team &&
 					myLoc.distanceSquaredTo(theirLoc) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
 					myLoc.distanceSquaredTo(theirLoc) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
 
-					myAction = attack(myLoc.directionTo(new MapLocation(r)));
+					myAction = attack(myLoc.directionTo(createLocation(r)));
 				}
 			}
 		}
@@ -768,7 +767,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				isFirstCastle = true;
 				for (Robot r: visibleRobots) {
 					if (!isVisible(r) || (r.team == me.team && r.unit == SPECS.CASTLE)) {
-						if (r.turn > 0) {
+						if (r.turn > 0 && r.id != me.id) {
 							isFirstCastle = false;
 						}
 					}
@@ -780,6 +779,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myCastleTalk = myLoc.getX();
 			} else if (me.turn == 2) {
 				myCastleTalk = myLoc.getY();
+			} else if (me.turn == 3) {
+				myCastleTalk = 0;
 			}
 
 			// Read castle locations
@@ -827,7 +828,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					int broadcastDistance = 0;
 					for (Robot robot: visibleRobots) {
 						if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit)) {
-							broadcastDistance = Math.max(broadcastDistance, myLoc.distanceSquaredTo(new MapLocation(robot)));
+							broadcastDistance = Math.max(broadcastDistance, myLoc.distanceSquaredTo(createLocation(robot)));
 						}
 					}
 					communications.sendRadio(1, broadcastDistance);
