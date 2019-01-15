@@ -29,9 +29,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private Robot[] visibleRobots;
 	private int[][] visibleRobotMap;
 	private BoardSymmetryType symmetryStatus;
+	private boolean[][] reachable;
+	private int reachableKarbonite;
+	private int reachableFuel;
 
 	// Game staging constants
-	private static final int TURTLE_THRESHOLD = 50;
+	private static final int KARB_RESERVE_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
 
 	// Data left over from previous round
 	private int prevKarbonite;
@@ -71,6 +74,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			prevKarbonite = karbonite;
 			prevFuel = fuel;
 
+			reachable = new boolean[boardSize][boardSize];
 			isDangerous = new int[boardSize][boardSize];
 			knownStructures = new KnownStructureType[boardSize][boardSize];
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
@@ -79,6 +83,22 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			rng = new SimpleRandom();
 			communications = new Communicator();
 			myBfsSolver = new BfsSolver();
+
+			myBfsSolver.solve(myLoc, (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].SPEED)), SPECS.UNITS[me.unit].SPEED,
+				(location)->{ return false; },
+				(location)->{ return false; },
+				(location)->{ return location.get(map) == MAP_PASSABLE; });
+			for (int i = 0; i < boardSize; i++) for (int j = 0;j < boardSize; j++) {
+				reachable[j][i] = myBfsSolver.wasVisited(new MapLocation(i, j));
+				if (reachable[j][i]) {
+					if (karboniteMap[j][i]) {
+						reachableKarbonite++;
+					}
+					if (fuelMap[j][i]) {
+						reachableFuel++;
+					}
+				}
+			}
 
 			determineSymmetricOrientation();
 
@@ -211,7 +231,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		// TODO should we change all calls to BfsSolver.solve to use MapLocation.isOccupiable as part of their visit condition?
 		boolean isOccupiable() {
-			return isOnMap() && get(map) == MAP_PASSABLE && get(visibleRobotMap) == MAP_EMPTY;
+			return isOnMap() && get(map) == MAP_PASSABLE && get(visibleRobotMap) <= 0;
 		}
 
 		void set(boolean[][] arr, boolean value) {
@@ -736,6 +756,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			return null;
 		}
+
+		boolean wasVisited(MapLocation location) {
+			return location.get(bfsVisited) == bfsRunId;
+		}
 	}
 
 	//////// Specific robot controller implementations ////////
@@ -758,12 +782,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			myCastleTalk = 0;
+			myCastleTalk = me.unit;
 		}
 
 		SpecificRobotController(MapLocation newHome) {
 			myHome = newHome;
-			myCastleTalk = 0;
+			myCastleTalk = me.unit;
 		}
 
 		Action runTurn() {
@@ -794,6 +818,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private boolean[] seenEnemies;
 
 		private AttackStatusType attackStatus;
+
+		private static final int INITIAL_LOCATION_SHARING_OFFSET = 6;
 
 		private final Direction[] ddirs = {
 			new Direction(2, 2),
@@ -868,11 +894,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			// Note: friendlyUnits[SPECS.CASTLE] is inaccurate for first 3 turns
+			int[] friendlyUnits = new int[6];
+			for (Robot r: visibleRobots) {
+				if (!isVisible(r)) {
+					if (me.turn > 3) {
+						friendlyUnits[communications.readCastle(r)]++;
+					}
+				} else if (r.team == me.team) {
+					friendlyUnits[r.unit]++;
+				}
+			}
+
 			// Send my castle location
 			if (me.turn == 1) {
-				myCastleTalk = myLoc.getX();
+				myCastleTalk = myLoc.getX() + INITIAL_LOCATION_SHARING_OFFSET;
 			} else if (me.turn == 2) {
-				myCastleTalk = myLoc.getY();
+				myCastleTalk = myLoc.getY() + INITIAL_LOCATION_SHARING_OFFSET;
 			} else if (me.turn == 3) {
 				myCastleTalk = 0;
 			}
@@ -886,7 +924,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (msg != Communicator.NO_MESSAGE) {
 							if (castleLocations.containsKey(r.id)) {
 								// Receiving y coordinate
-								MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg);
+								MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg-INITIAL_LOCATION_SHARING_OFFSET);
 								castleLocations.put(r.id, where);
 								if (symmetryStatus != BoardSymmetryType.VER_SYMMETRICAL) {
 									attackTargetList.add(where.opposite(BoardSymmetryType.HOR_SYMMETRICAL));
@@ -896,7 +934,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								}
 							} else {
 								// Receiving x coordinate
-								castleLocations.put(r.id, new MapLocation(msg, 0));
+								castleLocations.put(r.id, new MapLocation(msg-INITIAL_LOCATION_SHARING_OFFSET, 0));
 							}
 						}
 					}
@@ -947,10 +985,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PREACHER;
 			} else if (isFirstCastle && me.turn == 1) {
 				toBuild = SPECS.PILGRIM;
-			} else if (me.turn < TURTLE_THRESHOLD && karbonite > prevKarbonite) {
+			} else if (me.turn < KARB_RESERVE_THRESHOLD &&
+				karbonite > prevKarbonite &&
+				friendlyUnits[SPECS.PILGRIM] < (reachableKarbonite+5)/2) {
+
 				toBuild = SPECS.PILGRIM;
-			} else if (me.turn >= TURTLE_THRESHOLD) {
-				toBuild = SPECS.PROPHET;
+			} else if (me.turn >= KARB_RESERVE_THRESHOLD || friendlyUnits[SPECS.PILGRIM] >= (reachableKarbonite+5)/2) {
+				if (friendlyUnits[SPECS.PILGRIM] < (reachableKarbonite+5)/2) {
+					toBuild = SPECS.PILGRIM;
+				} else if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER] &&
+					friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.PROPHET]) {
+
+					toBuild = SPECS.PREACHER;
+				} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]) {
+					toBuild = SPECS.PROPHET;
+				} else {
+					toBuild = SPECS.CRUSADER;
+				}
 			}
 
 			if (toBuild != -1 &&
