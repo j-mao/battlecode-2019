@@ -39,6 +39,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private boolean[][] knownStructuresSeenBefore; // whether or not each structure is stored in the lists below
 	private LinkedList<MapLocation> knownStructuresCoords;
 
+	// Instant messaging
+	private static final int ATTACK_DOWNGRADE_MSG = 0xffff;
+
 	// Utilities
 	private SimpleRandom rng;
 	private Communicator communications;
@@ -461,7 +464,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private boolean isEnemyStructure(int robotId) {
-		return isFriendlyStructure(getRobot(robotId));
+		return isEnemyStructure(getRobot(robotId));
 	}
 
 	private boolean isEnemyStructure(MapLocation location) {
@@ -920,7 +923,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							broadcastDistance = Math.max(broadcastDistance, myLoc.distanceSquaredTo(createLocation(robot)));
 						}
 					}
-					communications.sendRadio(1, broadcastDistance);
+					communications.sendRadio(ATTACK_DOWNGRADE_MSG, broadcastDistance);
 
 					// TODO are we really rushing though?
 					// Reset these because these units will go and rush a castle
@@ -1128,16 +1131,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		DefenderController() {
 			super();
 
-			// TODO do we really want to initialise with ongoing attack status?
-			attackStatus = AttackStatusType.ATTACK_ONGOING;
+			attackStatus = AttackStatusType.NO_ATTACK;
 			desiredLocation = null;
 		}
 
 		DefenderController(MapLocation newHome) {
 			super(newHome);
 
-			// TODO do we really want to initialise with ongoing attack status?
-			attackStatus = AttackStatusType.ATTACK_ONGOING;
+			attackStatus = AttackStatusType.NO_ATTACK;
 			desiredLocation = null;
 		}
 
@@ -1146,13 +1147,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = tryToAttack();
 
-			// TODO Check for attack status downgrade message
-
-			// Check for castle first-turn location assignment
-			if (me.turn == 1) {
-				for (Robot r: visibleRobots) {
-					if (isVisible(r) && isRadioing(r) && r.team == me.team && r.unit == SPECS.CASTLE) {
+			// Check for the following messages from castle:
+			// - first-turn location assignment
+			// - attack status downgrade message
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && isRadioing(r) && r.team == me.team && r.unit == SPECS.CASTLE) {
+					if (me.turn == 1) {
 						desiredLocation = new MapLocation(communications.readRadio(r));
+						attackStatus = AttackStatusType.ATTACK_ONGOING;
+					} else if (communications.readRadio(r) == ATTACK_DOWNGRADE_MSG) {
+						attackStatus = AttackStatusType.NO_ATTACK;
 					}
 				}
 			}
