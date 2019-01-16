@@ -758,6 +758,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			bfsRunId++;
 			solutionStackHead = 0;
 
+			qL.clear(); qD.clear();
+
 			qL.add(source);
 			qD.add(null);
 			source.set(bfsVisited, bfsRunId);
@@ -769,7 +771,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				Direction ud = qD.poll();
 				if (objectiveCondition.apply(u)) {
 					arrival = u;
-					qL.clear(); qD.clear();
 					break;
 				}
 				if (skipCondition.apply(u)) {

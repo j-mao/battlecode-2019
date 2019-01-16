@@ -38,7 +38,7 @@ public class DankQueue<T> {
 	}
 
 	public boolean add(T e) {
-		if ((l + 1) % ln == r) return false;
+		if ((r + 1) % ln == l) return false;
 		buf[r] = e;
 		r++;
 		r %= ln;
