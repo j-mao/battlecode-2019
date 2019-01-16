@@ -1433,11 +1433,27 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null && !isGoodTurtlingLocation(myLoc)) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null) {
-					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
-						(location)->{ return isGoodTurtlingLocation(location); },
+					int closestDis = distanceToClosestTurtleLocation();
+					if (closestDis != Integer.MAX_VALUE) {
+						myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
+						(location)->{ return isGoodTurtlingLocation(location) && location.distanceSquaredTo(myHome) == closestDis; },
 						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-						(location)->{ return location.isOccupiable(); });
-					bestDir = myBfsSolver.nextStep();
+						(location)->{ return location.isOccupiable() && location.get(visibleRobotMap) != -1; });
+						bestDir = myBfsSolver.nextStep();
+					}
+					
+				}
+
+				if (bestDir == null) {
+					// Move somewhere away from the castle
+					for (int i = 0; i < 8; i++) {
+						MapLocation newLoc = myLoc.add(dirs[i]);
+						if (newLoc.isOccupiable() && 
+							newLoc.distanceSquaredTo(myHome) > myLoc.distanceSquaredTo(myHome)) {
+							bestDir = dirs[i];
+							break;
+						}
+					}
 				}
 
 				if (bestDir == null) {
@@ -1463,6 +1479,25 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			// TODO make this ensure connectivity with the rest of the turtle
 			return (myHome.getX() + myHome.getY() + location.getX() + location.getY()) % 2 == 0;
+		}
+
+		private int distanceToClosestTurtleLocation() {
+			// What is the distance from our castle to the closest turtle location we can see 
+			int bestValue = Integer.MAX_VALUE;
+			int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
+			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+				Direction dir = new Direction(i, j);
+				if (dir.getMagnitude() <= SPECS.UNITS[me.unit].VISION_RADIUS) {
+					MapLocation location = myLoc.add(dir);
+					if (location.isOnMap() && location.get(map) == MAP_PASSABLE &&
+						location.isOccupiable() && 
+						isGoodTurtlingLocation(location)) {
+						int dis = location.distanceSquaredTo(myHome);
+						if (dis < bestValue) bestValue = dis;
+					}
+				}
+			}
+			return bestValue;
 		}
 	}
 
