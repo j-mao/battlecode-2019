@@ -729,12 +729,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int[][] bfsVisited;
 		private int bfsRunId;
 		private Direction[][] from;
+		private DankQueue<MapLocation> qL;
+		private DankQueue<Direction> qD;
 		private Direction[] solutionStack;
 		int solutionStackHead;
 
 		BfsSolver() {
 			bfsVisited = new int[boardSize][boardSize];
 			from = new Direction[boardSize][boardSize];
+			qL = new DankQueue<>(boardSize*boardSize);
+			qD = new DankQueue<>(boardSize*boardSize);
 			solutionStack = new Direction[boardSize*boardSize];
 			solutionStackHead = 0;
 		}
@@ -754,9 +758,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			bfsRunId++;
 			solutionStackHead = 0;
 
-			Queue<MapLocation> qL = new LinkedList<>();
-			Queue<Direction> qD = new LinkedList<>();
-
 			qL.add(source);
 			qD.add(null);
 			source.set(bfsVisited, bfsRunId);
@@ -768,6 +769,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				Direction ud = qD.poll();
 				if (objectiveCondition.apply(u)) {
 					arrival = u;
+					qL.clear(); qD.clear();
 					break;
 				}
 				if (skipCondition.apply(u)) {
@@ -860,7 +862,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private abstract class StructureController extends SpecificRobotController {
 
 		protected AttackStatusType attackStatus;
-		protected Queue<MapLocation> attackTargetList;
+		protected DankQueue<MapLocation> attackTargetList;
 
 		protected int enemyCrusaders;
 		protected int enemyProphets;
@@ -871,7 +873,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			super();
 
 			attackStatus = AttackStatusType.NO_ATTACK;
-			attackTargetList = new LinkedList<>();
+			attackTargetList = new DankQueue<>(boardSize*boardSize);
 
 			enemyCrusaders = 0;
 			enemyProphets = 0;
