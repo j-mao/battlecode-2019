@@ -836,6 +836,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		protected MapLocation myHome;
 		protected int myCastleTalk;
+		protected int globalRound;
 
 		SpecificRobotController() {
 
@@ -846,6 +847,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					MapLocation location = myLoc.add(dirs[i]);
 					if (location.isOnMap() && isFriendlyStructure(location)) {
 						myHome = location;
+						// TODO: Something different if this unit is a church
+						globalRound = getRobot(location.get(visibleRobotMap)).turn;
 					}
 				}
 			}
@@ -861,6 +864,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		Action runTurn() {
 			Action myAction = runSpecificTurn();
 			communications.sendCastle(myCastleTalk);
+			globalRound++;
 			return myAction;
 		}
 
@@ -1228,6 +1232,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
+			if (globalRound % 10 == 0) log(Integer.toString(globalRound));
 			Action myAction = null;
 			noteDangerousCells();
 
@@ -1264,9 +1269,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToGiveTowardsLocation(myHome);
 			}
 
-			if (myAction == null && (
+			boolean prioritiseKarbonite = karbonite * karboniteToFuelRatio(globalRound) < fuel && fuel > minimumFuelAmount(globalRound);
+
+			if (prioritiseKarbonite && myAction == null && (
 				(myLoc.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
-				(myLoc.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) )) {
+				 myLoc.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) ) {
+
+				myAction = mine();
+			}
+			else if (!prioritiseKarbonite && myAction == null && (
+				(myLoc.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) ||
+				 myLoc.get(karboniteMap) && me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ) {
 
 				myAction = mine();
 			}
@@ -1312,12 +1325,22 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								return false;
 							}
 
-							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
-								return true;
+							if (prioritiseKarbonite) {
+								if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
+									return true;
+								}
+								if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
+									return true;
+								}
+							} else {
+								if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) {
+									return true;
+								}
+								if (location.get(karboniteMap) && me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
+									return true;
+								}
 							}
-							if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
-								return true;
-							}
+
 							if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
 								me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
 
@@ -1356,6 +1379,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return myAction;
+		}
+
+		// Returns a ratio of karbonite : fuel in the form of 1 : return value
+		// Round should be the global round and not the units turn counter
+		private int karboniteToFuelRatio(int round) {
+			// Current values are fairly arbitrary 
+			if (round < 30) return 5;
+			else if (round < 150) return 10;
+			else return 20;
+		}
+
+		// Since we often have very little karbonite, a ratio might be insufficient
+		private int minimumFuelAmount(int round) {
+			// Current values are fairly arbitrary 
+			if (round < 30) return 100;
+			else if (round < 150) return 1000;
+			else return 2000;
 		}
 	}
 
