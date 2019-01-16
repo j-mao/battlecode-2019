@@ -34,6 +34,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Game staging constants
 	private static final int KARB_RESERVE_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
+	private static final int ALLOW_CHURCHES_THRESHOLD = 150; // When we start to allow pilgrims to build churches
 
 	// Data left over from previous round
 	private int prevKarbonite;
@@ -50,6 +51,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Instant messaging
 	private static final int LONG_DISTANCE_MASK = 0xa000;
+	private static final int PILGRIM_WANTS_A_CHURCH = 255;
+	private static final int LOCATION_SHARING_OFFSET = 6;
+	private static final int CASTLE_SECRET_TALK_OFFSET = 70;
+	private static final int END_ATTACK = 0xffff;
 
 	// Utilities
 	private SimpleRandom rng;
@@ -78,11 +83,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			isDangerous = new int[boardSize][boardSize];
 			veryDangerous = new int[boardSize][boardSize];
-			// For compatability with DANGER_THRESHOLD
-			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
-				isDangerous[j][i] = -100;
-				veryDangerous[j][i] = -100;
-			}
 			knownStructures = new KnownStructureType[boardSize][boardSize];
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
 			knownStructuresCoords = new LinkedList<>();
@@ -90,6 +90,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			rng = new SimpleRandom();
 			communications = new Communicator();
 			myBfsSolver = new BfsSolver();
+
+			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
+				if (karboniteMap[j][i]) {
+					numKarbonite++;
+				}
+				if (fuelMap[j][i]) {
+					numFuel++;
+				}
+			}
 
 			determineSymmetricOrientation();
 
@@ -519,6 +528,27 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return unitType == SPECS.PREACHER;
 	}
 
+	private boolean thresholdOk(int value, int threshold) {
+		if (value == 0) {
+			return true;
+		}
+		return value <= me.turn-threshold;
+	}
+
+	private int getReasonableBroadcastDistance(boolean includePeaceful) {
+		int distance = 0;
+		for (Robot robot: visibleRobots) {
+			if (isVisible(robot) &&
+				robot.team == me.team &&
+				(includePeaceful || isAggressiveRobot(robot.unit)) &&
+				robot.unit != SPECS.PROPHET) {
+
+				distance = Math.max(distance, myLoc.distanceSquaredTo(createLocation(robot)));
+			}
+		}
+		return distance;
+	}
+
 	private int attackPriority(int unitType) {
 		// TODO Fine-tune these constants, possibly take into account resource reclaim
 		// There is also a bonus of 1 point for every invisible square you hit (in getAttackValue)
@@ -843,6 +873,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private Queue<MapLocation> attackTargetList;
 
 		private boolean isFirstCastle;
+		private boolean[] isCastle;
 
 		private int crusadersCreated;
 		private int prophetsCreated;
@@ -853,8 +884,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private boolean[] seenEnemies;
 
 		private AttackStatusType attackStatus;
-
-		private static final int CASTLE_SECRET_TALK_OFFSET = 6;
 
 		private static final int SWARM_THRESHOLD = 10;
 
@@ -867,6 +896,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			castleLocations = new TreeMap<>();
 			attackTargetList = new LinkedList<>();
+
+			isCastle = new boolean[SPECS.MAX_ID+1];
 
 			crusadersCreated = 0;
 			prophetsCreated = 0;
@@ -898,11 +929,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			// Note: friendlyUnits[SPECS.CASTLE] is inaccurate for first 3 turns
+			boolean saveKarboniteForChurch = false;
 			int[] friendlyUnits = new int[6];
 			for (Robot r: visibleRobots) {
 				if (!isVisible(r)) {
 					if (me.turn > 3) {
-						friendlyUnits[communications.readCastle(r)]++;
+						int what = communications.readCastle(r);
+						if (what < LOCATION_SHARING_OFFSET) {
+							friendlyUnits[what]++;
+						} else if (what == PILGRIM_WANTS_A_CHURCH) {
+							friendlyUnits[SPECS.PILGRIM]++;
+							if (me.turn >= ALLOW_CHURCHES_THRESHOLD) {
+								saveKarboniteForChurch = true;
+							}
+						}
 					}
 				} else if (r.team == me.team) {
 					friendlyUnits[r.unit]++;
@@ -911,34 +951,50 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// Send my castle location
 			if (me.turn == 1) {
-				myCastleTalk = myLoc.getX() + CASTLE_SECRET_TALK_OFFSET;
+				myCastleTalk = myLoc.getX() + LOCATION_SHARING_OFFSET;
 			} else if (me.turn == 2) {
-				myCastleTalk = myLoc.getY() + CASTLE_SECRET_TALK_OFFSET;
+				myCastleTalk = myLoc.getY() + LOCATION_SHARING_OFFSET;
 			} else if (me.turn == 3) {
 				myCastleTalk = CASTLE_SECRET_TALK_OFFSET;
 			}
 
-			// Read castle locations
-			// Note that there may be a 1 turn delay
-			if (1 <= me.turn && me.turn <= 3) {
-				for (Robot r: visibleRobots) {
-					if (!isVisible(r) || (r.team == me.team && r.unit == SPECS.CASTLE)) {
-						int msg = communications.readCastle(r);
-						if (msg >= CASTLE_SECRET_TALK_OFFSET) {
-							if (castleLocations.containsKey(r.id) && castleLocations.get(r.id).getY() == -1) {
-								// Receiving y coordinate
-								MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg-CASTLE_SECRET_TALK_OFFSET);
-								castleLocations.put(r.id, where);
+			Integer newChurch = null;
+
+			// Read castle and church locations
+			for (Robot r: visibleRobots) {
+				if (!isVisible(r) || (r.team == me.team && (r.unit == SPECS.CASTLE || r.unit == SPECS.CHURCH))) {
+					int msg = communications.readCastle(r);
+					if (msg >= LOCATION_SHARING_OFFSET && msg-LOCATION_SHARING_OFFSET < boardSize) {
+						if (castleLocations.containsKey(r.id) && castleLocations.get(r.id).getY() == -1) {
+							// Receiving y coordinate
+							MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg-LOCATION_SHARING_OFFSET);
+							castleLocations.put(r.id, where);
+							if (me.turn <= 3) {
+								// This must be a castle
 								if (symmetryStatus != BoardSymmetryType.VER_SYMMETRICAL) {
 									attackTargetList.add(where.opposite(BoardSymmetryType.HOR_SYMMETRICAL));
 								}
 								if (symmetryStatus != BoardSymmetryType.HOR_SYMMETRICAL) {
 									attackTargetList.add(where.opposite(BoardSymmetryType.VER_SYMMETRICAL));
 								}
+								isCastle[r.id] = true;
 							} else {
-								// Receiving x coordinate
-								castleLocations.put(r.id, new MapLocation(msg-CASTLE_SECRET_TALK_OFFSET, -1));
+								// This must be a church
+								newChurch = r.id;
+								int myDistance = myLoc.distanceSquaredTo(where);
+								for (Integer castle: castleLocations.keySet()) {
+									if (isCastle[castle]) {
+										int theirDistance = castleLocations.get(castle).distanceSquaredTo(where);
+										if (theirDistance < myDistance || (myDistance == theirDistance && me.id > castle)) {
+											newChurch = null;
+											break;
+										}
+									}
+								}
 							}
+						} else {
+							// Receiving x coordinate
+							castleLocations.put(r.id, new MapLocation(msg-LOCATION_SHARING_OFFSET, -1));
 						}
 					}
 				}
@@ -969,11 +1025,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// Reset these because these units will go and rush a castle
 					crusadersCreated = prophetsCreated = preachersCreated = 0;
 					enemyCrusaders = enemyProphets = enemyPreachers = 0;
+					distressBroadcastDistance = -1;
 				}
 				attackStatus = AttackStatusType.NO_ATTACK;
 			} else {
 				if (attackStatus == AttackStatusType.NO_ATTACK) {
-					distressBroadcastDistance = getReasonableBroadcastDistance();
+					distressBroadcastDistance = getReasonableBroadcastDistance(false);
 				}
 				attackStatus = AttackStatusType.ATTACK_ONGOING;
 			}
@@ -989,20 +1046,22 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PILGRIM;
 			} else if (me.turn < KARB_RESERVE_THRESHOLD &&
 				karbonite > prevKarbonite &&
-				friendlyUnits[SPECS.PILGRIM] < (numKarbonite+5)/2) {
+				friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
 
 				toBuild = SPECS.PILGRIM;
 			} else if (me.turn >= KARB_RESERVE_THRESHOLD) {
-				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+5)/2) {
+				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
 					toBuild = SPECS.PILGRIM;
-				} else if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
-					friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
+				} else if (!saveKarboniteForChurch) {
+					if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
+						friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
 
-					toBuild = SPECS.PREACHER;
-				} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {
-					toBuild = SPECS.PROPHET;
-				} else {
-					toBuild = SPECS.CRUSADER;
+						toBuild = SPECS.PREACHER;
+					} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {
+						toBuild = SPECS.PROPHET;
+					} else {
+						toBuild = SPECS.CRUSADER;
+					}
 				}
 			}
 
@@ -1087,6 +1146,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (distressBroadcastDistance > 0) {
 				communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, distressBroadcastDistance);
+			} else if (distressBroadcastDistance == -1) {
+				communications.sendRadio(END_ATTACK, getReasonableBroadcastDistance(true));
+			} else if (newChurch != null) {
+				// Send reinforcements to protect church
+				communications.sendRadio(castleLocations.get(newChurch).hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance(false));
 			} else {
 				// Maybe we are in a good position... attack?
 
@@ -1098,21 +1162,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 				if (nearbyFriendlyAttackers >= SWARM_THRESHOLD) {
 					MapLocation where = attackTargetList.poll();
-					communications.sendRadio(where.hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance());
+					communications.sendRadio(where.hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance(false));
 					attackTargetList.add(where);
 				}
 			}
 			return myAction;
-		}
-
-		private int getReasonableBroadcastDistance() {
-			int distance = 0;
-			for (Robot robot: visibleRobots) {
-				if (isVisible(robot) && robot.team == me.team && isAggressiveRobot(robot.unit) && robot.unit != SPECS.PROPHET) {
-					distance = Math.max(distance, myLoc.distanceSquaredTo(createLocation(robot)));
-				}
-			}
-			return distance;
 		}
 
 		private int distanceToNearestEnemyFromLocation(MapLocation source) {
@@ -1132,12 +1186,46 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class ChurchController extends SpecificRobotController {
 
+		private AttackStatusType attackStatus;
+
 		ChurchController() {
 			super();
+
+			attackStatus = AttackStatusType.NO_ATTACK;
 		}
 
 		@Override
 		Action runSpecificTurn() {
+			// Share location
+			if (me.turn == 1) {
+				myCastleTalk = myLoc.getX() + LOCATION_SHARING_OFFSET;
+			} else if (me.turn == 2) {
+				myCastleTalk = myLoc.getY() + LOCATION_SHARING_OFFSET;
+			} else if (me.turn == 3) {
+				myCastleTalk = me.unit;
+			}
+
+			// Check if we are under attack
+			MapLocation imminentAttack = null;
+			for (Robot robot: visibleRobots) {
+				if (isVisible(robot) && robot.team != me.team) {
+					if (imminentAttack == null ||
+						myLoc.distanceSquaredTo(createLocation(robot)) < myLoc.distanceSquaredTo(imminentAttack)) {
+
+						imminentAttack = createLocation(robot);
+					}
+				}
+			}
+
+			if (imminentAttack == null) {
+				attackStatus = AttackStatusType.NO_ATTACK;
+			} else {
+				if (attackStatus == AttackStatusType.NO_ATTACK) {
+					communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance(false));
+				}
+				attackStatus = AttackStatusType.ATTACK_ONGOING;
+			}
+
 			return null;
 		}
 	}
@@ -1145,9 +1233,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class PilgrimController extends SpecificRobotController {
 
 		private final int DANGER_THRESHOLD = 8;
+		private final int OCCUPIED_THRESHOLD = 10;
+		private final int WANT_CHURCH_DISTANCE = 50;
+		private final int[][] resourceIsOccupied;
 
 		PilgrimController() {
 			super();
+			resourceIsOccupied = new int[boardSize][boardSize];
 		}
 
 		@Override
@@ -1155,6 +1247,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = null;
 			noteDangerousCells();
+
+			// Check if there is a new home closer to us
+			// or if we should note that an attack has ended
+			boolean attackEnded = false;
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) &&
+					isFriendlyStructure(r.id) &&
+					myLoc.distanceSquaredTo(createLocation(r)) < myLoc.distanceSquaredTo(myHome)) {
+
+					myHome = createLocation(r);
+				}
+				if (isRadioing(r) && (!isVisible(r) || (r.unit == SPECS.CASTLE && r.team == me.team))) {
+					if (communications.readRadio(r) == END_ATTACK) {
+						attackEnded = true;
+					}
+				}
+			}
+
+			if (myLoc.distanceSquaredTo(myHome) >= WANT_CHURCH_DISTANCE) {
+				myCastleTalk = PILGRIM_WANTS_A_CHURCH;
+			} else {
+				myCastleTalk = me.unit;
+			}
 
 			if (myAction == null && myLoc.get(isDangerous) == me.turn) {
 				myAction = tryToGoSomewhereNotDangerous(2, SPECS.UNITS[me.unit].SPEED);
@@ -1173,11 +1288,41 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = mine();
 			}
 
+			if (myAction == null &&
+				(myLoc.get(karboniteMap) /* || myLoc.get(fuelMap) */ ) &&
+				myLoc.distanceSquaredTo(myHome) >= WANT_CHURCH_DISTANCE &&
+				karbonite >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
+				fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
+
+				Direction buildDir = null;
+				for (int i = 0; i < 8; i++) {
+					if (myLoc.add(dirs[i]).isOccupiable() &&
+						!myLoc.add(dirs[i]).get(karboniteMap) &&
+						!myLoc.add(dirs[i]).get(fuelMap)) {
+
+						buildDir = dirs[i];
+						break;
+					}
+				}
+				if (buildDir == null) {
+					for (int i = 0; i < 8; i++) {
+						if (myLoc.add(dirs[i]).isOccupiable()) {
+							buildDir = dirs[i];
+							break;
+						}
+					}
+				}
+				if (buildDir != null) {
+					myAction = buildUnit(SPECS.CHURCH, buildDir);
+				}
+			}
+
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null ||
 					!myLoc.add(bestDir).isOccupiable() ||
-					myLoc.add(bestDir).get(isDangerous) == me.turn) {
+					myLoc.add(bestDir).get(isDangerous) == me.turn ||
+					attackEnded) {
 					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
 							if (location.get(visibleRobotMap) > 0) {
@@ -1187,7 +1332,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 								return true;
 							}
-							if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && location.get(isDangerous) <= me.turn-DANGER_THRESHOLD) {
+							if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
 								return true;
 							}
 							if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
@@ -1203,13 +1348,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							return false;
 						},
 						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-						(location)->{ return location.isOccupiable() && location.get(isDangerous) < me.turn-DANGER_THRESHOLD; });
+						(location)->{
+							if (location.get(karboniteMap) || location.get(fuelMap)) {
+								if (!thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD)) {
+									return false;
+								}
+								if (!location.isOccupiable()) {
+									location.set(resourceIsOccupied, me.turn);
+								}
+							}
+							return location.isOccupiable() && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD);
+						});
 					bestDir = myBfsSolver.nextStep();
 				}
 
 				if (bestDir != null &&
 					myLoc.add(bestDir).isOccupiable() &&
-					myLoc.add(bestDir).get(isDangerous) <= me.turn-DANGER_THRESHOLD) {
+					thresholdOk(myLoc.add(bestDir).get(isDangerous), DANGER_THRESHOLD)) {
 
 					myAction = move(bestDir);
 				} else {
@@ -1309,7 +1464,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			// TODO broadcast attack success
 			if (myAction == null &&
 				myTarget.equals(myHome) &&
-				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[SPECS.CASTLE].VISION_RADIUS) {
+				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+
 				mySpecificRobotController = new DefenderController(myHome);
 				return mySpecificRobotController.runSpecificTurn();
 			}
@@ -1320,7 +1476,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				!myTarget.equals(myHome) &&
 				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
 
-				myTarget = myHome;
+				if (isFriendlyStructure(myTarget)) {
+					myHome = myTarget;
+				} else {
+					myTarget = myHome;
+				}
 			}
 
 			if (myAction == null) {
