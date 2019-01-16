@@ -1232,7 +1232,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
-			if (globalRound % 10 == 0) log(Integer.toString(globalRound));
 			Action myAction = null;
 			noteDangerousCells();
 
@@ -1273,13 +1272,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (prioritiseKarbonite && myAction == null && (
 				(myLoc.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
-				 myLoc.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) ) {
+				 (myLoc.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) )) {
 
 				myAction = mine();
 			}
 			else if (!prioritiseKarbonite && myAction == null && (
 				(myLoc.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) ||
-				 myLoc.get(karboniteMap) && me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ) {
+				 (myLoc.get(karboniteMap) && me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) )) {
 
 				myAction = mine();
 			}
