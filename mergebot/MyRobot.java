@@ -1391,6 +1391,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int minimumFuelAmount(int round) {
 			// Current values are fairly arbitrary 
 			if (round < 30) return 100;
+			else if (round < 50) return 150;
+			else if (round < 75) return 250;
+			else if (round < 100) return 500;
 			else if (round < 150) return 1000;
 			else return 2000;
 		}
