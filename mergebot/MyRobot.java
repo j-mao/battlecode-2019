@@ -34,7 +34,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Game staging constants
 	private static final int KARB_RESERVE_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
-	private static final int ALLOW_CHURCHES_THRESHOLD = 150; // When we start to allow pilgrims to build churches
+	private static final int ALLOW_CHURCHES_THRESHOLD = 50; // When we start to allow pilgrims to build churches
+	private static final int FUEL_FOR_SWARM = 2500; // Min fuel before we allow a swarm
 
 	// Data left over from previous round
 	private int prevKarbonite;
@@ -958,8 +959,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myCastleTalk = CASTLE_SECRET_TALK_OFFSET;
 			}
 
-			Integer newChurch = null;
-
 			// Read castle and church locations
 			for (Robot r: visibleRobots) {
 				if (!isVisible(r) || (r.team == me.team && (r.unit == SPECS.CASTLE || r.unit == SPECS.CHURCH))) {
@@ -978,19 +977,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 									attackTargetList.add(where.opposite(BoardSymmetryType.VER_SYMMETRICAL));
 								}
 								isCastle[r.id] = true;
-							} else {
-								// This must be a church
-								newChurch = r.id;
-								int myDistance = myLoc.distanceSquaredTo(where);
-								for (Integer castle: castleLocations.keySet()) {
-									if (isCastle[castle]) {
-										int theirDistance = castleLocations.get(castle).distanceSquaredTo(where);
-										if (theirDistance < myDistance || (myDistance == theirDistance && me.id > castle)) {
-											newChurch = null;
-											break;
-										}
-									}
-								}
 							}
 						} else {
 							// Receiving x coordinate
@@ -1148,10 +1134,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, distressBroadcastDistance);
 			} else if (distressBroadcastDistance == -1) {
 				communications.sendRadio(END_ATTACK, getReasonableBroadcastDistance(true));
-			} else if (newChurch != null) {
-				// Send reinforcements to protect church
-				communications.sendRadio(castleLocations.get(newChurch).hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance(false));
-			} else {
+			} else if (fuel >= FUEL_FOR_SWARM) {
 				// Maybe we are in a good position... attack?
 
 				int nearbyFriendlyAttackers = 0;
