@@ -526,7 +526,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private boolean isSquadUnitType(int unitType) {
-		return unitType == SPECS.PREACHER;
+		return unitType == SPECS.CRUSADER || unitType == SPECS.PREACHER;
 	}
 
 	private boolean thresholdOk(int value, int threshold) {
@@ -534,20 +534,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return true;
 		}
 		return value <= me.turn-threshold;
-	}
-
-	private int getReasonableBroadcastDistance(boolean includePeaceful) {
-		int distance = 0;
-		for (Robot robot: visibleRobots) {
-			if (isVisible(robot) &&
-				robot.team == me.team &&
-				(includePeaceful || isAggressiveRobot(robot.unit)) &&
-				robot.unit != SPECS.PROPHET) {
-
-				distance = Math.max(distance, myLoc.distanceSquaredTo(createLocation(robot)));
-			}
-		}
-		return distance;
 	}
 
 	private int attackPriority(int unitType) {
@@ -838,7 +824,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected int myCastleTalk;
 		protected int globalRound;
 
-		SpecificRobotController() {
+		protected SpecificRobotController() {
 
 			myHome = myLoc;
 
@@ -856,7 +842,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			myCastleTalk = me.unit;
 		}
 
-		SpecificRobotController(MapLocation newHome) {
+		protected SpecificRobotController(MapLocation newHome) {
 			myHome = newHome;
 			myCastleTalk = me.unit;
 		}
@@ -871,11 +857,88 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		abstract Action runSpecificTurn();
 	}
 
-	private class CastleController extends SpecificRobotController {
+	private abstract class StructureController extends SpecificRobotController {
 
-		private Map<Integer, MapLocation> castleLocations;
+		protected AttackStatusType attackStatus;
+		protected Queue<MapLocation> attackTargetList;
+
+		protected int enemyCrusaders;
+		protected int enemyProphets;
+		protected int enemyPreachers;
+		protected boolean[] seenEnemies;
+
+		protected StructureController() {
+			super();
+
+			attackStatus = AttackStatusType.NO_ATTACK;
+			attackTargetList = new LinkedList<>();
+
+			enemyCrusaders = 0;
+			enemyProphets = 0;
+			enemyPreachers = 0;
+			seenEnemies = new boolean[SPECS.MAX_ID+1];
+		}
+
+		protected void shareStructureLocations(int defaultValue) {
+			if (me.turn == 1) {
+				myCastleTalk = myLoc.getX() + LOCATION_SHARING_OFFSET;
+			} else if (me.turn == 2) {
+				myCastleTalk = myLoc.getY() + LOCATION_SHARING_OFFSET;
+			} else if (me.turn == 3) {
+				myCastleTalk = defaultValue;
+			}
+		}
+
+		protected MapLocation senseImminentAttack() {
+			MapLocation imminentAttack = null;
+			for (Robot robot: visibleRobots) {
+				if (isVisible(robot) && robot.team != me.team) {
+					if (!seenEnemies[robot.id]) {
+						if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
+						else if (robot.unit == SPECS.PROPHET) enemyProphets++;
+						else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
+						seenEnemies[robot.id] = true;
+					}
+					if (imminentAttack == null ||
+							myLoc.distanceSquaredTo(createLocation(robot)) < myLoc.distanceSquaredTo(imminentAttack)) {
+
+						imminentAttack = createLocation(robot);
+					}
+				}
+			}
+			return imminentAttack;
+		}
+
+		protected int distanceToNearestEnemyFromLocation(MapLocation source) {
+			// Excludes pilgrims
+			// TODO do we really want to exclude pilgrims?
+			int ans = Integer.MAX_VALUE;
+			if (!attackTargetList.isEmpty()) {
+				ans = source.distanceSquaredTo(attackTargetList.peek());
+			}
+			for (Robot robot: visibleRobots) {
+				if (isVisible(robot) && robot.team != me.team && robot.unit != SPECS.PILGRIM) {
+					ans = Math.min(ans, source.distanceSquaredTo(createLocation(robot)));
+				}
+			}
+			return ans;
+		}
+
+		protected int getReasonableBroadcastDistance(boolean includePeaceful) {
+			int distance = 0;
+			for (Robot robot: visibleRobots) {
+				if (isVisible(robot) && robot.team == me.team && (includePeaceful || isSquadUnitType(robot.unit))) {
+					distance = Math.max(distance, myLoc.distanceSquaredTo(createLocation(robot)));
+				}
+			}
+			return distance;
+		}
+	}
+
+	private class CastleController extends StructureController {
+
+		private Map<Integer, MapLocation> structureLocations;
 		private Map<Integer, MapLocation> unitAssignments;
-		private Queue<MapLocation> attackTargetList;
 
 		private boolean isFirstCastle;
 		private boolean[] isCastle;
@@ -883,12 +946,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int crusadersCreated;
 		private int prophetsCreated;
 		private int preachersCreated;
-		private int enemyCrusaders;
-		private int enemyProphets;
-		private int enemyPreachers;
-		private boolean[] seenEnemies;
-
-		private AttackStatusType attackStatus;
 
 		private static final int SWARM_THRESHOLD = 10;
 
@@ -899,20 +956,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		CastleController() {
 			super();
 
-			castleLocations = new TreeMap<>();
-			attackTargetList = new LinkedList<>();
+			structureLocations = new TreeMap<>();
 
 			isCastle = new boolean[SPECS.MAX_ID+1];
 
 			crusadersCreated = 0;
 			prophetsCreated = 0;
 			preachersCreated = 0;
-			enemyCrusaders = 0;
-			enemyProphets = 0;
-			enemyPreachers = 0;
-			seenEnemies = new boolean[SPECS.MAX_ID+1];
-
-			attackStatus = AttackStatusType.NO_ATTACK;
 		}
 
 		@Override
@@ -954,59 +1004,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			// Send my castle location
-			if (me.turn == 1) {
-				myCastleTalk = myLoc.getX() + LOCATION_SHARING_OFFSET;
-			} else if (me.turn == 2) {
-				myCastleTalk = myLoc.getY() + LOCATION_SHARING_OFFSET;
-			} else if (me.turn == 3) {
-				myCastleTalk = CASTLE_SECRET_TALK_OFFSET;
-			}
-
-			// Read castle and church locations
-			for (Robot r: visibleRobots) {
-				if (!isVisible(r) || (r.team == me.team && (r.unit == SPECS.CASTLE || r.unit == SPECS.CHURCH))) {
-					int msg = communications.readCastle(r);
-					if (msg >= LOCATION_SHARING_OFFSET && msg-LOCATION_SHARING_OFFSET < boardSize) {
-						if (castleLocations.containsKey(r.id) && castleLocations.get(r.id).getY() == -1) {
-							// Receiving y coordinate
-							MapLocation where = new MapLocation(castleLocations.get(r.id).getX(), msg-LOCATION_SHARING_OFFSET);
-							castleLocations.put(r.id, where);
-							if (me.turn <= 3) {
-								// This must be a castle
-								if (symmetryStatus != BoardSymmetryType.VER_SYMMETRICAL) {
-									attackTargetList.add(where.opposite(BoardSymmetryType.HOR_SYMMETRICAL));
-								}
-								if (symmetryStatus != BoardSymmetryType.HOR_SYMMETRICAL) {
-									attackTargetList.add(where.opposite(BoardSymmetryType.VER_SYMMETRICAL));
-								}
-								isCastle[r.id] = true;
-							}
-						} else {
-							// Receiving x coordinate
-							castleLocations.put(r.id, new MapLocation(msg-LOCATION_SHARING_OFFSET, -1));
-						}
-					}
-				}
-			}
-
-			// Check if we are under attack
-			MapLocation imminentAttack = null;
-			for (Robot robot: visibleRobots) {
-				if (isVisible(robot) && robot.team != me.team) {
-					if (!seenEnemies[robot.id]) {
-						if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
-						else if (robot.unit == SPECS.PROPHET) enemyProphets++;
-						else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
-						seenEnemies[robot.id] = true;
-					}
-					if (imminentAttack == null ||
-						myLoc.distanceSquaredTo(createLocation(robot)) < myLoc.distanceSquaredTo(imminentAttack)) {
-
-						imminentAttack = createLocation(robot);
-					}
-				}
-			}
+			shareStructureLocations(CASTLE_SECRET_TALK_OFFSET);
+			readStructureLocations();
+			MapLocation imminentAttack = senseImminentAttack();
 
 			int distressBroadcastDistance = 0;
 			if (imminentAttack == null) {
@@ -1064,7 +1064,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (isAggressiveRobot(toBuild) && attackStatus == AttackStatusType.NO_ATTACK) {
 					requiredToNotify = true;
 					int myState = myCastleTalk - CASTLE_SECRET_TALK_OFFSET;
-					for (Integer castle: castleLocations.keySet()) {
+					for (Integer castle: structureLocations.keySet()) {
 						Robot r = getRobot(castle);
 						if (r != null) {
 							int msg = communications.readCastle(r);
@@ -1143,7 +1143,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 				int nearbyFriendlyAttackers = 0;
 				for (Robot r: visibleRobots) {
-					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.unit != SPECS.PROPHET) {
+					if (isVisible(r) && r.team == me.team && isSquadUnitType(r.unit)) {
 						nearbyFriendlyAttackers++;
 					}
 				}
@@ -1156,53 +1156,48 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private int distanceToNearestEnemyFromLocation(MapLocation source) {
-			// Excludes pilgrims
-			int ans = Integer.MAX_VALUE;
-			if (!attackTargetList.isEmpty()) {
-				ans = source.distanceSquaredTo(attackTargetList.peek());
-			}
-			for (Robot robot: visibleRobots) {
-				if (isVisible(robot) && robot.team != me.team && robot.unit != SPECS.PILGRIM) {
-					ans = Math.min(ans, source.distanceSquaredTo(createLocation(robot)));
+		private void readStructureLocations() {
+			for (Robot r: visibleRobots) {
+				if (!isVisible(r) || (r.team == me.team && isStructure(r.unit))) {
+					int msg = communications.readCastle(r);
+					if (msg >= LOCATION_SHARING_OFFSET && msg-LOCATION_SHARING_OFFSET < boardSize) {
+						if (structureLocations.containsKey(r.id) && structureLocations.get(r.id).getY() == -1) {
+							// Receiving y coordinate
+							MapLocation where = new MapLocation(structureLocations.get(r.id).getX(), msg-LOCATION_SHARING_OFFSET);
+							structureLocations.put(r.id, where);
+							if (me.turn <= 3) {
+								// This must be a castle
+								if (symmetryStatus != BoardSymmetryType.VER_SYMMETRICAL) {
+									attackTargetList.add(where.opposite(BoardSymmetryType.HOR_SYMMETRICAL));
+								}
+								if (symmetryStatus != BoardSymmetryType.HOR_SYMMETRICAL) {
+									attackTargetList.add(where.opposite(BoardSymmetryType.VER_SYMMETRICAL));
+								}
+								isCastle[r.id] = true;
+							}
+						} else {
+							// Receiving x coordinate
+							structureLocations.put(r.id, new MapLocation(msg-LOCATION_SHARING_OFFSET, -1));
+						}
+					}
 				}
 			}
-			return ans;
 		}
 	}
 
-	private class ChurchController extends SpecificRobotController {
-
-		private AttackStatusType attackStatus;
+	private class ChurchController extends StructureController {
 
 		ChurchController() {
 			super();
-
-			attackStatus = AttackStatusType.NO_ATTACK;
 		}
 
 		@Override
 		Action runSpecificTurn() {
-			// Share location
-			if (me.turn == 1) {
-				myCastleTalk = myLoc.getX() + LOCATION_SHARING_OFFSET;
-			} else if (me.turn == 2) {
-				myCastleTalk = myLoc.getY() + LOCATION_SHARING_OFFSET;
-			} else if (me.turn == 3) {
-				myCastleTalk = me.unit;
-			}
+
+			shareStructureLocations(me.unit);
 
 			// Check if we are under attack
-			MapLocation imminentAttack = null;
-			for (Robot robot: visibleRobots) {
-				if (isVisible(robot) && robot.team != me.team) {
-					if (imminentAttack == null ||
-						myLoc.distanceSquaredTo(createLocation(robot)) < myLoc.distanceSquaredTo(imminentAttack)) {
-
-						imminentAttack = createLocation(robot);
-					}
-				}
-			}
+			MapLocation imminentAttack = senseImminentAttack();
 
 			if (imminentAttack == null) {
 				attackStatus = AttackStatusType.NO_ATTACK;
@@ -1420,7 +1415,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = tryToAttack();
 
 			// Check for assignment from castle
-			if (me.unit != SPECS.PROPHET) { // Rangers stay at the turtle
+			if (isSquadUnitType(me.unit)) {
 				for (Robot r: visibleRobots) {
 					if (isRadioing(r)) {
 						int what = communications.readRadio(r);
