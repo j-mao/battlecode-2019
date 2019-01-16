@@ -34,7 +34,7 @@ public class DankQueue<T> {
 	}
 
 	public int size() {
-		return r - l;
+		return (r - l + ln) % ln;
 	}
 
 	public boolean add(T e) {
