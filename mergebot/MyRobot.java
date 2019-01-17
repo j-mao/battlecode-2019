@@ -65,6 +65,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private BfsSolver myBfsSolver;
 	private SpecificRobotController mySpecificRobotController;
 	private MapLocation myLoc;
+	private int globalRound;
 
 	// Entry point for every turn
 	public Action turn() {
@@ -103,6 +104,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			globalRound = me.turn;
+			for (int i = 0; i < 8; i++) {
+				MapLocation location = myLoc.add(dirs[i]);
+				if (location.isOnMap() && isFriendlyStructure(location)) {
+					// TODO Something different if this unit is a church
+					globalRound = getRobot(location.get(visibleRobotMap)).turn;
+				}
+			}
+
 			determineSymmetricOrientation();
 
 			if (me.unit == SPECS.CASTLE) {
@@ -133,6 +143,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		} finally {
 			prevKarbonite = karbonite;
 			prevFuel = fuel;
+			globalRound++;
 		}
 
 		return myAction;
@@ -799,15 +810,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		Action runTurn() {
 			Action myAction = runSpecificTurn();
-			specificCleanup();
 			communications.sendCastle(myCastleTalk);
 			return myAction;
 		}
 
 		abstract Action runSpecificTurn();
-
-		protected void specificCleanup() {
-		}
 	}
 
 	private abstract class StructureController extends SpecificRobotController {
@@ -936,19 +943,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private abstract class MobileRobotController extends SpecificRobotController {
 
 		protected MapLocation myHome;
-		protected int globalRound;
 
 		protected MobileRobotController() {
 			super();
 
 			myHome = myLoc;
-
 			for (int i = 0; i < 8; i++) {
 				MapLocation location = myLoc.add(dirs[i]);
 				if (location.isOnMap() && isFriendlyStructure(location)) {
 					myHome = location;
-					// TODO Something different if this unit is a church
-					globalRound = getRobot(location.get(visibleRobotMap)).turn;
 				}
 			}
 		}
@@ -957,11 +960,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			super();
 
 			myHome = newHome;
-		}
-
-		@Override
-		protected void specificCleanup() {
-			globalRound++;
 		}
 
 		protected Action tryToGiveTowardsLocation(MapLocation target) {
