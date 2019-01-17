@@ -50,6 +50,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private KnownStructureType[][] knownStructures;
 	private boolean[][] knownStructuresSeenBefore; // whether or not each structure is stored in the lists below
 	private LinkedList<MapLocation> knownStructuresCoords;
+	private int[][] damageDoneToSquare;
 
 	// Instant messaging: radio
 	private static final int LONG_DISTANCE_MASK = 0xa000;
@@ -92,6 +93,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			knownStructures = new KnownStructureType[boardSize][boardSize];
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
 			knownStructuresCoords = new LinkedList<>();
+			damageDoneToSquare = new int[boardSize][boardSize];
 
 			rng = new SimpleRandom();
 			communications = new EncryptedCommunicator();
@@ -406,13 +408,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				symmetryStatus != BoardSymmetryType.BOTH_SYMMETRICAL &&
 				(location.get(knownStructures) == KnownStructureType.OUR_CASTLE ||
 				 location.get(knownStructures) == KnownStructureType.ENEMY_CASTLE)) {
-
 				MapLocation opposite = location.opposite(symmetryStatus);
-				opposite.set(knownStructures, location.get(knownStructures).otherOwner());
-				opposite.set(knownStructuresSeenBefore, true);
+				if (!opposite.get(knownStructuresSeenBefore)) {
+					knownStructuresCoords.add(opposite);
+					opposite.set(knownStructures, location.get(knownStructures).otherOwner());
+					opposite.set(knownStructuresSeenBefore, true);
+					opposite.set(damageDoneToSquare, 0);
+				}
 			}
 
-			location.set(knownStructuresSeenBefore, true);
+			if (location.get(knownStructures) != null) {
+				location.set(knownStructuresSeenBefore, true);
+				location.set(damageDoneToSquare, 0);
+			}
 		}
 
 		// Iterate over all structures we have ever seen and remove them if we can see they are dead
@@ -421,7 +429,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		while (iterator.hasNext())
 		{
 			MapLocation location = iterator.next();
-			if (location.get(visibleRobotMap) == MAP_EMPTY) {
+			if (location.get(visibleRobotMap) == MAP_EMPTY || 
+				(location.get(damageDoneToSquare) >= 
+				((location.get(knownStructures) == KnownStructureType.OUR_CASTLE 
+				|| location.get(knownStructures) == KnownStructureType.ENEMY_CASTLE) ? 
+				SPECS.UNITS[SPECS.CASTLE].STARTING_HP : SPECS.UNITS[SPECS.CHURCH].STARTING_HP))) {
+
 				location.set(knownStructures, null);
 			}
 		}
@@ -953,7 +966,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private abstract class MobileRobotController extends SpecificRobotController {
 
 		protected MapLocation myHome;
-
 		protected MobileRobotController() {
 			super();
 
@@ -1021,6 +1033,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 			int bestValue = Integer.MIN_VALUE;
 			int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].ATTACK_RADIUS[1]));
+			MapLocation bestLoc = null;
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
 				Direction dir = new Direction(i, j);
 				if (dir.getMagnitude() >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
@@ -1033,6 +1046,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (altValue > bestValue) {
 							myAction = attack(dir);
 							bestValue = altValue;
+							bestLoc = location;
+						}
+					}
+				}
+			}
+			if (bestLoc != null && fuel >= SPECS.UNITS[me.unit].ATTACK_FUEL_COST) {
+				for (int i = -1; i <= 1; i++) {
+					for (int j = -1; j <= 1; j++) {
+						Direction dir = new Direction(i, j);
+						if (dir.getMagnitude() <= SPECS.UNITS[me.unit].DAMAGE_SPREAD) {
+							MapLocation location = myLoc.add(dir);
+							if (location.isOnMap()) {
+								location.set(damageDoneToSquare, location.get(damageDoneToSquare) + SPECS.UNITS[me.unit].ATTACK_DAMAGE);
+							}
 						}
 					}
 				}
