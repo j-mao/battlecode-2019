@@ -701,6 +701,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private DankQueue<Direction> qD;
 		private Direction[] solutionStack;
 		int solutionStackHead;
+		private MapLocation dest;
 
 		BfsSolver() {
 			bfsVisited = new int[boardSize][boardSize];
@@ -709,6 +710,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			qD = new DankQueue<>(boardSize*boardSize);
 			solutionStack = new Direction[boardSize*boardSize];
 			solutionStackHead = 0;
+			dest = null;
 		}
 
 		/**
@@ -726,6 +728,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			bfsRunId++;
 			solutionStackHead = 0;
 
+			dest = null;
+
 			qL.clear(); qD.clear();
 
 			qL.add(source);
@@ -738,7 +742,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				MapLocation u = qL.poll();
 				Direction ud = qD.poll();
 				if (objectiveCondition.apply(u)) {
-					arrival = u;
+					dest = arrival = u;
 					break;
 				}
 				if (skipCondition.apply(u)) {
@@ -780,6 +784,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			solutionStackHead--;
 			return solutionStack[solutionStackHead];
+		}
+
+		MapLocation getDest() {
+			return dest;
 		}
 
 		boolean wasVisited(MapLocation location) {
@@ -1337,7 +1345,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class PilgrimController extends MobileRobotController {
 
 		private final int DANGER_THRESHOLD = 8;
-		private final int OCCUPIED_THRESHOLD = 10;
+		private final int OCCUPIED_THRESHOLD = 100;
 		private final int WANT_CHURCH_DISTANCE = 50;
 		private final int[][] resourceIsOccupied;
 
@@ -1351,6 +1359,36 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = null;
 			noteDangerousCells();
+
+			// Note occupied cells
+			boolean redoBfs = false;
+
+			Integer maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
+			for (int i = -maxDispl; i <= maxDispl; ++i) {
+				for (int j = -maxDispl; j <= maxDispl; ++j) {
+					if (i == 0 && j == 0) continue;
+					Direction dir = new Direction(i, j);
+					if (dir.getMagnitude() <= SPECS.UNITS[me.unit].VISION_RADIUS) {
+						MapLocation curr = myLoc.add(dir);
+						// are there some units we should ignore
+						// when checking occupation states?
+						// who knows? doesn't seem that essential to
+						// worry about right now
+						if (!curr.equals(myLoc) && curr.isOnMap() &&
+							(curr.get(karboniteMap) || curr.get(fuelMap))) {
+
+							if (curr.isOccupiable()) {
+								if (curr.get(resourceIsOccupied) != -OCCUPIED_THRESHOLD) {
+									redoBfs = true;
+								}
+								curr.set(resourceIsOccupied, -OCCUPIED_THRESHOLD);
+							} else {
+								curr.set(resourceIsOccupied, me.turn);
+							}
+						}
+					}
+				}
+			}
 
 			// Check if there is a new home closer to us
 			// or if we should note that an attack has ended
@@ -1431,6 +1469,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null ||
+					!thresholdOk(myBfsSolver.getDest().get(resourceIsOccupied), OCCUPIED_THRESHOLD) ||
+					redoBfs ||
 					!myLoc.add(bestDir).isOccupiable() ||
 					myLoc.add(bestDir).get(isDangerous) == me.turn ||
 					attackEnded) {
@@ -1474,9 +1514,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							if (location.get(karboniteMap) || location.get(fuelMap)) {
 								if (!thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD)) {
 									return false;
-								}
-								if (!location.isOccupiable()) {
-									location.set(resourceIsOccupied, me.turn);
 								}
 							}
 							return location.isOccupiable() && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD);
