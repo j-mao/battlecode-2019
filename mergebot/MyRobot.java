@@ -1648,16 +1648,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null) {
+				boolean onlyDefendingUnit = amOnlyDefendingUnit(); // If we are the only defending unit, can't afford to lose defender's advantage
 				Direction bestDir = myBfsSolver.nextStep();
-				if (bestDir == null || !myLoc.add(bestDir).isOccupiable()) {
-					myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
+				if (bestDir == null || !myLoc.add(bestDir).isOccupiable() || me.turn == 2) {
+					myBfsSolver.solve(myLoc, onlyDefendingUnit && me.turn == 1 ? 1 : 2, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
 							return !(visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc)) &&
 								location.distanceSquaredTo(myTarget) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
 								location.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1];
 						},
 						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-						(location)->{ return location.isOccupiable(); });
+						(location)->{ return location.isOccupiable();});
 					bestDir = myBfsSolver.nextStep();
 				}
 
@@ -1672,13 +1673,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// We make an exception for our first turn, so that we actually try to move somewhere
 					boolean shouldMove = true;
 					if (me.turn > 1) {
-						shouldMove = false;
-						for (Robot r: visibleRobots) {
-							if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.id != me.id) {
-								shouldMove = true;
-								break;
-							}
-						}
+						shouldMove = !onlyDefendingUnit;
 					}
 					if (shouldMove) {
 						myAction = move(bestDir);
@@ -1686,6 +1681,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			return myAction;
+		}
+
+		boolean amOnlyDefendingUnit() {
+			if (globalRound < KARB_RESERVE_TURN_THRESHOLD) {
+				for (Robot r : visibleRobots) {
+					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.id != me.id) {
+						return false;
+					}
+				}
+				return true;
+			}
+			return false;
 		}
 	}
 }
