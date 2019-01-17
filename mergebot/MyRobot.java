@@ -33,8 +33,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private int numFuel;
 
 	// Game staging constants
-	private static final int KARB_RESERVE_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
-	private static final int ALLOW_CHURCHES_THRESHOLD = 50; // When we start to allow pilgrims to build churches
+	private static final int KARB_RESERVE_TURN_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
+	private static final int ALLOW_CHURCHES_TURN_THRESHOLD = 50; // When we start to allow pilgrims to build churches
 	private static final int FUEL_FOR_SWARM = 2500; // Min fuel before we allow a swarm
 
 	// Data left over from previous round
@@ -1091,7 +1091,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							friendlyUnits[what]++;
 						} else if (what == PILGRIM_WANTS_A_CHURCH) {
 							friendlyUnits[SPECS.PILGRIM]++;
-							if (me.turn >= ALLOW_CHURCHES_THRESHOLD) {
+							if (me.turn >= ALLOW_CHURCHES_TURN_THRESHOLD) {
 								saveKarboniteForChurch = true;
 							}
 						}
@@ -1133,12 +1133,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.PREACHER;
 			} else if (isFirstCastle && me.turn == 1) {
 				toBuild = SPECS.PILGRIM;
-			} else if (me.turn < KARB_RESERVE_THRESHOLD &&
+			} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
 				karbonite > prevKarbonite &&
 				friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
 
 				toBuild = SPECS.PILGRIM;
-			} else if (me.turn >= KARB_RESERVE_THRESHOLD) {
+			} else if (me.turn >= KARB_RESERVE_TURN_THRESHOLD) {
 				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
 					toBuild = SPECS.PILGRIM;
 				} else {
