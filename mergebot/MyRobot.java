@@ -1141,7 +1141,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (me.turn >= KARB_RESERVE_THRESHOLD) {
 				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
 					toBuild = SPECS.PILGRIM;
-				} else if (!saveKarboniteForChurch) {
+				} else {
 					if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
 						friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
 
@@ -1150,6 +1150,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						toBuild = SPECS.PROPHET;
 					} else {
 						toBuild = SPECS.CRUSADER;
+					}
+					if (saveKarboniteForChurch &&
+						karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) {
+
+						toBuild = -1;
 					}
 				}
 			}
