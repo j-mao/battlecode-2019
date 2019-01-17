@@ -91,7 +91,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			knownStructuresCoords = new LinkedList<>();
 
 			rng = new SimpleRandom();
-			communications = new Communicator();
+			communications = new EncryptedCommunicator();
 			myBfsSolver = new BfsSolver();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
@@ -612,29 +612,68 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	//////// Communications library ////////
 
-	private class Communicator {
+	private interface Communicator {
 
-		private static final int NO_MESSAGE = -1;
+		public static final int NO_MESSAGE = -1;
+
+		public int readRadio(Robot broadcaster);
+		public void sendRadio(int value, int signalRadius);
+		public int readCastle(Robot broadcaster);
+		public void sendCastle(int value);
+	}
+
+	// Use this for local tests
+	private class PlaintextCommunicator implements Communicator {
+
+		@Override
+		public int readRadio(Robot broadcaster) {
+			return broadcaster.signal;
+		}
+
+		@Override
+		public void sendRadio(int value, int signalRadius) {
+			signal(value, signalRadius);
+		}
+
+		@Override
+		public int readCastle(Robot broadcaster) {
+			// Prevent attempting to decode before robot was born
+			if (broadcaster.turn == 0 || (broadcaster.turn == 1 && me.id == broadcaster.id))
+				return NO_MESSAGE;
+			return broadcaster.castle_talk;
+		}
+
+		@Override
+		public void sendCastle(int value) {
+			castleTalk(value);
+		}
+	}
+
+	// Use this for all uploaded submissions
+	private class EncryptedCommunicator implements Communicator {
 
 		private final int RADIO_MAX = 1 << (SPECS.COMMUNICATION_BITS);
 		private final int RADIO_PAD = 0x420b1a3e % RADIO_MAX;
 		private final int CASTLE_MAX = 1 << (SPECS.CASTLE_TALK_BITS);
 		private final int CASTLE_PAD = 0x420b1a3e % CASTLE_MAX;
 
-		int readRadio(Robot broadcaster) {
+		@Override
+		public int readRadio(Robot broadcaster) {
 			return broadcaster.signal
 				^ RADIO_PAD
 				^ (Math.abs(SimpleRandom.advance(broadcaster.id ^ broadcaster.signal_radius)) % RADIO_MAX);
 		}
 
-		void sendRadio(int value, int signalRadius) {
+		@Override
+		public void sendRadio(int value, int signalRadius) {
 			signal(value
 					^ RADIO_PAD
 					^ (Math.abs(SimpleRandom.advance(me.id ^ signalRadius)) % RADIO_MAX),
 					signalRadius);
 		}
 
-		int readCastle(Robot broadcaster) {
+		@Override
+		public int readCastle(Robot broadcaster) {
 			// Prevent attempting to decode before robot was born
 			if (broadcaster.turn == 0 || (broadcaster.turn == 1 && me.id == broadcaster.id))
 				return NO_MESSAGE;
@@ -643,7 +682,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				^ (Math.abs(SimpleRandom.advance(broadcaster.id)) % CASTLE_MAX);
 		}
 
-		void sendCastle(int value) {
+		@Override
+		public void sendCastle(int value) {
 			castleTalk(value
 					^ CASTLE_PAD
 					^ (Math.abs(SimpleRandom.advance(me.id)) % CASTLE_MAX));
@@ -775,6 +815,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected AttackStatusType attackStatus;
 		protected DankQueue<MapLocation> attackTargetList;
 
+		protected int enemyPeacefulRobots;
 		protected int enemyCrusaders;
 		protected int enemyProphets;
 		protected int enemyPreachers;
@@ -786,6 +827,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			attackStatus = AttackStatusType.NO_ATTACK;
 			attackTargetList = new DankQueue<>(boardSize*boardSize);
 
+			enemyPeacefulRobots = 0;
 			enemyCrusaders = 0;
 			enemyProphets = 0;
 			enemyPreachers = 0;
@@ -802,6 +844,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
+		protected void downgradeAttackStatus() {
+			enemyPeacefulRobots = enemyCrusaders = enemyProphets = enemyPreachers = 0;
+			communications.sendRadio(END_ATTACK, getReasonableBroadcastDistance(true));
+			// TODO do we want to reset seenEnemies?
+		}
+
 		protected MapLocation senseImminentAttack() {
 			MapLocation imminentAttack = null;
 			for (Robot robot: visibleRobots) {
@@ -810,6 +858,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
 						else if (robot.unit == SPECS.PROPHET) enemyProphets++;
 						else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
+						else enemyPeacefulRobots++;
 						seenEnemies[robot.id] = true;
 					}
 					if (imminentAttack == null ||
@@ -845,6 +894,42 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			return distance;
+		}
+
+		protected Action tryToBuildInAnAwesomeDirection(int toBuild) {
+			Action myAction = null;
+
+			if (toBuild == SPECS.PILGRIM) {
+				// TODO build towards resources rather than just anywhere
+				for (int i = 0; i < 8; i++) {
+					MapLocation location = myLoc.add(dirs[i]);
+					if (location.isOnMap() && location.get(map) == MAP_PASSABLE && location.get(visibleRobotMap) == MAP_EMPTY) {
+						myAction = buildUnit(toBuild, dirs[i]);
+						break;
+					}
+				}
+			} else {
+				// Builds towards the nearest enemy
+
+				Direction bestBuildDir = null;
+				int bestDistance = Integer.MAX_VALUE;
+
+				for (int i = 0; i < 8; i++) {
+					MapLocation location = myLoc.add(dirs[i]);
+					if (location.isOccupiable()) {
+						int d = distanceToNearestEnemyFromLocation(location);
+						if (d < bestDistance) {
+							bestBuildDir = dirs[i];
+							bestDistance = d;
+						}
+					}
+				}
+
+				if (bestBuildDir != null) {
+					myAction = buildUnit(toBuild, bestBuildDir);
+				}
+			}
+			return myAction;
 		}
 	}
 
@@ -1026,7 +1111,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// TODO are we really rushing though?
 					// Reset these because these units will go and rush a castle
 					crusadersCreated = prophetsCreated = preachersCreated = 0;
-					enemyCrusaders = enemyProphets = enemyPreachers = 0;
+					downgradeAttackStatus();
 					distressBroadcastDistance = -1;
 				}
 				attackStatus = AttackStatusType.NO_ATTACK;
@@ -1042,7 +1127,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.CRUSADER;
 			} else if (prophetsCreated < enemyProphets) {
 				toBuild = SPECS.PROPHET;
-			} else if (preachersCreated < enemyPreachers) {
+			} else if (preachersCreated < enemyPreachers+enemyPeacefulRobots) {
+				// Fight against enemy peaceful robots with preachers
+				// TODO Is this a good idea?
 				toBuild = SPECS.PREACHER;
 			} else if (isFirstCastle && me.turn == 1) {
 				toBuild = SPECS.PILGRIM;
@@ -1093,54 +1180,27 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 
 				if (isAllowedToBuild) {
-					if (toBuild == SPECS.PILGRIM) {
-						// TODO build towards resources rather than just anywhere
-						for (int i = 0; i < 8; i++) {
-							MapLocation location = myLoc.add(dirs[i]);
-							if (location.isOnMap() &&
-								location.get(map) == MAP_PASSABLE &&
-								location.get(visibleRobotMap) == MAP_EMPTY) {
-
-								myAction = buildUnit(toBuild, dirs[i]);
-								break;
-							}
-						}
-					} else {
-						// Builds towards the nearest enemy
-
-						Direction bestBuildDir = null;
-						int bestDistance = Integer.MAX_VALUE;
-
-						for (int i = 0; i < 8; i++) {
-							MapLocation location = myLoc.add(dirs[i]);
-							if (location.isOccupiable()) {
-								int d = distanceToNearestEnemyFromLocation(location);
-								if (d < bestDistance) {
-									bestBuildDir = dirs[i];
-									bestDistance = d;
-								}
-							}
-						}
-
-						if (bestBuildDir != null) {
-							myAction = buildUnit(toBuild, bestBuildDir);
-							if (toBuild == SPECS.CRUSADER) {
-								crusadersCreated++;
-							} else if (toBuild == SPECS.PROPHET) {
-								prophetsCreated++;
-							} else if (toBuild == SPECS.PREACHER) {
-								preachersCreated++;
-							}
-						}
-					}
+					myAction = tryToBuildInAnAwesomeDirection(toBuild);
 
 					// Build successful
 					if (myAction != null) {
-						if (requiredToNotify) {
-							myCastleTalk = (myCastleTalk - CASTLE_SECRET_TALK_OFFSET + 1) % 3 + CASTLE_SECRET_TALK_OFFSET;
+						// Update stats
+						if (toBuild == SPECS.CRUSADER) {
+							crusadersCreated++;
+						} else if (toBuild == SPECS.PROPHET) {
+							prophetsCreated++;
+						} else if (toBuild == SPECS.PREACHER) {
+							preachersCreated++;
 						}
+
+						// Broadcast distress to new unit if required
 						if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
 							distressBroadcastDistance = Math.max(distressBroadcastDistance, 2);
+						}
+
+						// Notify other castles if required
+						if (requiredToNotify) {
+							myCastleTalk = (myCastleTalk - CASTLE_SECRET_TALK_OFFSET + 1) % 3 + CASTLE_SECRET_TALK_OFFSET;
 						}
 					}
 				}
@@ -1148,8 +1208,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (distressBroadcastDistance > 0) {
 				communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, distressBroadcastDistance);
-			} else if (distressBroadcastDistance == -1) {
-				communications.sendRadio(END_ATTACK, getReasonableBroadcastDistance(true));
 			} else if (fuel >= FUEL_FOR_SWARM) {
 				// Maybe we are in a good position... attack?
 
@@ -1206,21 +1264,68 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
+			Action myAction = null;
+
 			shareStructureLocations(me.unit);
 
-			// Check if we are under attack
 			MapLocation imminentAttack = senseImminentAttack();
-
+			int distressBroadcastDistance = 0;
 			if (imminentAttack == null) {
+				if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
+					downgradeAttackStatus();
+					distressBroadcastDistance = -1;
+				}
 				attackStatus = AttackStatusType.NO_ATTACK;
 			} else {
 				if (attackStatus == AttackStatusType.NO_ATTACK) {
-					communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance(false));
+					distressBroadcastDistance = getReasonableBroadcastDistance(false);
 				}
 				attackStatus = AttackStatusType.ATTACK_ONGOING;
 			}
 
-			return null;
+			int friendlyCrusaders = 0;
+			int friendlyProphets = 0;
+			int friendlyPreachers = 0;
+
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.team == me.team) {
+					if (r.unit == SPECS.CRUSADER) friendlyCrusaders++;
+					else if (r.unit == SPECS.PROPHET) friendlyProphets++;
+					else if (r.unit == SPECS.PREACHER) friendlyPreachers++;
+				}
+			}
+
+			int toBuild = -1;
+			if (friendlyCrusaders < enemyCrusaders) {
+				toBuild = SPECS.CRUSADER;
+			} else if (friendlyProphets < enemyProphets) {
+				toBuild = SPECS.PROPHET;
+			} else if (friendlyPreachers < enemyPreachers+enemyPeacefulRobots) {
+				// Fight against enemy peaceful robots with preachers
+				// TODO Is this a good idea?
+				toBuild = SPECS.PREACHER;
+			}
+
+			if (toBuild != -1 &&
+				karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
+				fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
+
+				myAction = tryToBuildInAnAwesomeDirection(toBuild);
+
+				// Build successful
+				if (myAction != null) {
+					// Broadcast distress to new unit if required
+					if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
+						distressBroadcastDistance = Math.max(distressBroadcastDistance, 2);
+					}
+				}
+			}
+
+			if (distressBroadcastDistance > 0) {
+				communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, distressBroadcastDistance);
+			}
+
+			return myAction;
 		}
 	}
 
