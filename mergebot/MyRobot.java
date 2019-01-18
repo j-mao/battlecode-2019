@@ -461,18 +461,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private void determineSymmetricOrientation() {
 		boolean isHor = isSymmetrical(BoardSymmetryType.HOR_SYMMETRICAL);
-		boolean isVer = isSymmetrical(BoardSymmetryType.VER_SYMMETRICAL);
-
-		if (isHor && isVer) {
-			symmetryStatus = BoardSymmetryType.BOTH_SYMMETRICAL;
-		} else if (isHor) {
+		
+		if (isHor) {
 			symmetryStatus = BoardSymmetryType.HOR_SYMMETRICAL;
-		} else if (isVer) {
-			symmetryStatus = BoardSymmetryType.VER_SYMMETRICAL;
 		} else {
-			symmetryStatus = BoardSymmetryType.BOTH_SYMMETRICAL;
-			log("Error: Map is not symmetrical at all!");
+			symmetryStatus = BoardSymmetryType.VER_SYMMETRICAL;
 		}
+		
 	}
 
 	//////// Helper functions ////////
