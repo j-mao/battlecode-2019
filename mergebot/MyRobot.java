@@ -1445,16 +1445,25 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private MapLocation annoyingEnemyUnit;
 		private int lastTurnAnnoyed;
 
+		private LinkedList<MapLocation> karboniteLocs, fuelLocs;
+
 		PilgrimController() {
 			super();
 
 			resourceIsOccupied = new int[boardSize][boardSize];
 			annoyingEnemyUnit = null;
 			lastTurnAnnoyed = 0;
+
+			karboniteLocs = new LinkedList<>();
+			fuelLocs = new LinkedList<>();
 		}
 
 		@Override
 		Action runSpecificTurn() {
+
+			if (me.turn == 1) {
+				noteResourceLocations();
+			}
 
 			Action myAction = null;
 
@@ -1542,6 +1551,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			boolean prioritiseKarbonite = karbonite * karboniteToFuelRatio(globalRound) < fuel && fuel > minimumFuelAmount(globalRound);
+			// If there is none of the resource we are prioritising, swap
+			if (prioritiseKarbonite && numberOfUnoccupiedResources(karboniteLocs) == 0) {
+				prioritiseKarbonite = false;
+			} else if (!prioritiseKarbonite && numberOfUnoccupiedResources(fuelLocs) == 0) {
+				prioritiseKarbonite = true;
+			}
 
 			if (prioritiseKarbonite && myAction == null && (
 				(myLoc.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
@@ -1673,6 +1688,34 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			else if (round < 100) return 500;
 			else if (round < 150) return 1000;
 			else return 2000;
+		}
+
+		// Store the coordinates of all fuel and karbonite deposits
+		private void noteResourceLocations() {
+			for (int i = 0; i < boardSize; i++) {
+				for (int j = 0; j < boardSize; j++) {
+					MapLocation loc = new MapLocation(i, j);
+					if (loc.get(karboniteMap)) {
+						karboniteLocs.add(loc);
+					}
+					if (loc.get(fuelMap)) {
+						fuelLocs.add(loc);
+					}
+				}
+			}
+		}
+
+		// Pass in karboniteLocs or fuelLocs to get the number of unoccupied of that resource
+		private int numberOfUnoccupiedResources(LinkedList<MapLocation> resourceLocs) {
+			int ans = 0;
+			Iterator<MapLocation> iterator = resourceLocs.iterator();
+			while (iterator.hasNext()) {
+				MapLocation location = iterator.next();
+				if (thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD)) {
+					ans++;
+				}
+			}
+			return ans;
 		}
 	}
 
