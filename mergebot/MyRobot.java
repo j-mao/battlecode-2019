@@ -546,7 +546,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private boolean isAggressiveRobot(int unitType) {
-		return unitType == SPECS.CRUSADER || unitType == SPECS.PROPHET || unitType == SPECS.PREACHER;
+		return unitType == SPECS.CRUSADER || unitType == SPECS.PROPHET || unitType == SPECS.PREACHER || unitType == SPECS.CASTLE;
 	}
 
 	private boolean isSquadUnitType(int unitType) {
@@ -846,6 +846,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected DankQueue<MapLocation> attackTargetList;
 
 		protected int enemyPeacefulRobots;
+		protected int enemyCastles;
 		protected int enemyCrusaders;
 		protected int enemyProphets;
 		protected int enemyPreachers;
@@ -858,6 +859,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			attackTargetList = new DankQueue<>(boardSize*boardSize);
 
 			enemyPeacefulRobots = 0;
+			enemyCastles = 0;
 			enemyCrusaders = 0;
 			enemyProphets = 0;
 			enemyPreachers = 0;
@@ -888,6 +890,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (robot.unit == SPECS.CRUSADER) enemyCrusaders++;
 						else if (robot.unit == SPECS.PROPHET) enemyProphets++;
 						else if (robot.unit == SPECS.PREACHER) enemyPreachers++;
+						else if (robot.unit == SPECS.CASTLE) enemyCastles++;
 						else enemyPeacefulRobots++;
 						seenEnemies[robot.id] = true;
 					}
@@ -1180,32 +1183,38 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				toBuild = SPECS.CRUSADER;
 			} else if (prophetsCreated < enemyProphets) {
 				toBuild = SPECS.PROPHET;
-			} else if (preachersCreated < enemyPreachers) {
+			} else if (preachersCreated < enemyPreachers+enemyCastles*3) {
 				toBuild = SPECS.PREACHER;
-			} else if (isFirstCastle && me.turn == 1) {
-				toBuild = SPECS.PILGRIM;
-			} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
-				karbonite > prevKarbonite &&
-				friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
+			} else if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
+				myAction = tryToAttack();
+			}
 
-				toBuild = SPECS.PILGRIM;
-			} else if (me.turn >= KARB_RESERVE_TURN_THRESHOLD) {
-				if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
+			if (toBuild == -1 && myAction == null) {
+				if (isFirstCastle && me.turn == 1) {
 					toBuild = SPECS.PILGRIM;
-				} else {
-					if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
-						friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
+				} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
+					karbonite > prevKarbonite &&
+					friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
 
-						toBuild = SPECS.PREACHER;
-					} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {
-						toBuild = SPECS.PROPHET;
+					toBuild = SPECS.PILGRIM;
+				} else if (me.turn >= KARB_RESERVE_TURN_THRESHOLD) {
+					if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
+						toBuild = SPECS.PILGRIM;
 					} else {
-						toBuild = SPECS.CRUSADER;
-					}
-					if (saveKarboniteForChurch &&
-						karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) {
+						if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
+							friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
 
-						toBuild = -1;
+							toBuild = SPECS.PREACHER;
+						} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {
+							toBuild = SPECS.PROPHET;
+						} else {
+							toBuild = SPECS.CRUSADER;
+						}
+						if (saveKarboniteForChurch &&
+							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) {
+
+							toBuild = -1;
+						}
 					}
 				}
 			}
@@ -1258,6 +1267,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (requiredToNotify) {
 							myCastleTalk = (myCastleTalk - CASTLE_SECRET_TALK_OFFSET + 1) % 3 + CASTLE_SECRET_TALK_OFFSET;
 						}
+					} else {
+						// Couldn't build, let's just fight the enemy or whatever
+						myAction = tryToAttack();
 					}
 				}
 			}
@@ -1282,6 +1294,42 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			return myAction;
+		}
+
+		private Action tryToAttack() {
+			Action res = null;
+			int cdps = 0, cdist = 420420;
+			boolean cwithin = false;
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && (r.team != me.team)) {
+					MapLocation loc = createLocation(r);
+					int dps = 0;
+					int dist = myLoc.distanceSquaredTo(loc);
+					boolean within = false;
+
+					if (r.unit == SPECS.CHURCH || r.unit == SPECS.PILGRIM) {
+						dps = 0;
+						within = false;
+					} else {
+						dps = SPECS.UNITS[r.unit].ATTACK_DAMAGE;
+						within = (dist >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0] &&
+								  dist <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]);
+					}
+
+					if (r.unit == SPECS.CASTLE) {
+						dist = 0;
+					}
+
+					if (dist > SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) continue;
+
+					if (dps > cdps || (dps == cdps && within && !cwithin || (within == cwithin && dist < cdist))) {
+						res = attack(myLoc.directionTo(loc));
+						cdps = dps; cwithin = within; cdist = dist;
+					}
+				}
+			}
+
+			return res;
 		}
 
 		private void readStructureLocations() {
@@ -1833,7 +1881,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		boolean amOnlyDefendingUnit() {
 			if (globalRound < KARB_RESERVE_TURN_THRESHOLD) {
 				for (Robot r : visibleRobots) {
-					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.id != me.id) {
+					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.unit != SPECS.CASTLE && r.id != me.id) {
 						return false;
 					}
 				}
