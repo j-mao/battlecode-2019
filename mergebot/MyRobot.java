@@ -1056,7 +1056,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					for (int j = -1; j <= 1; j++) {
 						Direction dir = new Direction(i, j);
 						if (dir.getMagnitude() <= SPECS.UNITS[me.unit].DAMAGE_SPREAD) {
-							MapLocation location = myLoc.add(dir);
+							MapLocation location = bestLoc.add(dir);
 							if (location.isOnMap()) {
 								location.set(damageDoneToSquare, location.get(damageDoneToSquare) + SPECS.UNITS[me.unit].ATTACK_DAMAGE);
 							}
