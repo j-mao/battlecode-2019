@@ -1148,13 +1148,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			int toBuild = -1;
-			if (crusadersCreated < enemyCrusaders) {
+			if (crusadersCreated < enemyCrusaders+enemyPeacefulRobots) {
+				// Fight against enemy non-aggressors with crusaders cos these things are cheap
 				toBuild = SPECS.CRUSADER;
 			} else if (prophetsCreated < enemyProphets) {
 				toBuild = SPECS.PROPHET;
-			} else if (preachersCreated < enemyPreachers+enemyPeacefulRobots) {
-				// Fight against enemy peaceful robots with preachers
-				// TODO Is this a good idea?
+			} else if (preachersCreated < enemyPreachers) {
 				toBuild = SPECS.PREACHER;
 			} else if (isFirstCastle && me.turn == 1) {
 				toBuild = SPECS.PILGRIM;
