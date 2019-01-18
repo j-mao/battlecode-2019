@@ -650,7 +650,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		@Override
 		public int readCastle(Robot broadcaster) {
-			// Prevent attempting to decode before robot was born
+			// Prevent attempting to read before robot was born
 			if (broadcaster.turn == 0 || (broadcaster.turn == 1 && me.id == broadcaster.id))
 				return NO_MESSAGE;
 			return broadcaster.castle_talk;
@@ -1327,13 +1327,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			int toBuild = -1;
-			if (friendlyCrusaders < enemyCrusaders) {
+			if (friendlyCrusaders < enemyCrusaders+enemyPeacefulRobots) {
+				// Fight against enemy non-aggressors with crusaders cos these things are cheap
 				toBuild = SPECS.CRUSADER;
 			} else if (friendlyProphets < enemyProphets) {
 				toBuild = SPECS.PROPHET;
-			} else if (friendlyPreachers < enemyPreachers+enemyPeacefulRobots) {
-				// Fight against enemy peaceful robots with preachers
-				// TODO Is this a good idea?
+			} else if (friendlyPreachers < enemyPreachers) {
 				toBuild = SPECS.PREACHER;
 			}
 
@@ -1615,8 +1614,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
-			Action myAction = tryToAttack();
-
 			// Check for assignment from castle
 			if (isSquadUnitType(me.unit)) {
 				for (Robot r: visibleRobots) {
@@ -1630,15 +1627,53 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			Action myAction = tryToAttack();
+
+			// If I see a unit but cannot attack it, then at least chase it
+			// Do not try when it is dangerous
+			// TODO create an EnemyHarasserController class to manage this, especially if this becomes a designated role
+			if (myAction == null && SPECS.UNITS[me.unit].VISION_RADIUS > SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+				MapLocation where = null;
+				boolean isSafe = true;
+				for (Robot r: visibleRobots) {
+					if (isVisible(r) && r.team != me.team) {
+						if (isAggressiveRobot(r.unit)) {
+							isSafe = false;
+							break;
+						} else {
+							where = createLocation(r);
+						}
+					}
+				}
+				if (isSafe && where != null) {
+					// Go as close as possible
+					MapLocation bestLoc = null;
+					for (int i = -3; i <= 3; i++) for (int j = -3; j <= 3; j++) {
+						Direction dir = new Direction(i, j);
+						if (dir.getMagnitude() <= SPECS.UNITS[me.unit].SPEED) {
+							MapLocation location = myLoc.add(dir);
+							if (location.isOccupiable() &&
+								(bestLoc == null || where.distanceSquaredTo(location) < where.distanceSquaredTo(bestLoc))) {
+
+								bestLoc = location;
+							}
+						}
+					}
+					if (bestLoc != null) {
+						myAction = move(myLoc.directionTo(bestLoc));
+					}
+				}
+			}
+
 			if (myAction == null && !isGoodTurtlingLocation(myLoc)) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null) {
 					int closestDis = smallestTurtleDistanceToCastle();
 					if (closestDis != Integer.MAX_VALUE) {
 						myBfsSolver.solve(myLoc, 2, SPECS.UNITS[me.unit].SPEED,
-						(location)->{ return isGoodTurtlingLocation(location) && location.distanceSquaredTo(myHome) == closestDis; },
-						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
-						(location)->{ return location.isOccupiable() && location.get(visibleRobotMap) != MAP_INVISIBLE; });
+							(location)->{ return isGoodTurtlingLocation(location) && location.distanceSquaredTo(myHome) == closestDis; },
+							(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+							(location)->{ return location.isOccupiable() && location.get(visibleRobotMap) != MAP_INVISIBLE; });
 						bestDir = myBfsSolver.nextStep();
 					}
 				}
