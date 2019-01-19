@@ -35,7 +35,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Game staging constants
 	private static final int KARB_RESERVE_TURN_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
 	private static final int ALLOW_CHURCHES_TURN_THRESHOLD = 50; // When we start to allow pilgrims to build churches
-	private static final int READY_TO_SEND_REINFORCEMENT_TURN_THRESHOLD = 1000; // When we allow and respond to calls for help
 	private static final int FUEL_FOR_SWARM = 2500; // Min fuel before we allow a swarm
 
 	// Data left over from previous round
@@ -59,7 +58,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Instant messaging: castle talk
 	private static final int LOCATION_SHARING_OFFSET = 6;
 	private static final int CASTLE_SECRET_TALK_OFFSET = 70;
-	private static final int REINFORCEMENT_REQUEST_OFFSET = 73;
+	private static final int CLUSTER_ASSIGNMENT_OFFSET = 73;
 	private static final int PILGRIM_WANTS_A_CHURCH = 255;
 
 	// Utilities
@@ -1280,8 +1279,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private Map<Integer, MapLocation> structureLocations;
 		private Map<Integer, MapLocation> unitAssignments;
 
-		private MapLocation[] locationsNeedingReinforcement;
-
 		private boolean isFirstCastle;
 		private boolean[] isCastle;
 
@@ -1300,7 +1297,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			structureLocations = new TreeMap<>();
 
-			locationsNeedingReinforcement = new MapLocation[SPECS.MAX_ID+1];
 			isCastle = new boolean[SPECS.MAX_ID+1];
 
 			crusadersCreated = 0;
@@ -1327,7 +1323,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// Note: friendlyUnits[SPECS.CASTLE] is inaccurate for first 3 turns
 			boolean saveKarboniteForChurch = false;
-			MapLocation reinforcementLocation = null;
 			int[] friendlyUnits = new int[6];
 			for (Robot r: visibleRobots) {
 				if (!isVisible(r)) {
@@ -1335,19 +1330,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						int what = communications.readCastle(r);
 						if (what < LOCATION_SHARING_OFFSET) {
 							friendlyUnits[what]++;
-						} else if (what >= CASTLE_SECRET_TALK_OFFSET && what < REINFORCEMENT_REQUEST_OFFSET) {
+						} else if (what >= CASTLE_SECRET_TALK_OFFSET && what < CLUSTER_ASSIGNMENT_OFFSET) {
 							friendlyUnits[SPECS.CASTLE]++;
-						} else if (what >= REINFORCEMENT_REQUEST_OFFSET && what < REINFORCEMENT_REQUEST_OFFSET+boardSize) {
-							// TODO not really a todo, but note that we assume only pilgrims request for help
-							friendlyUnits[SPECS.PILGRIM]++;
-							if (me.turn >= READY_TO_SEND_REINFORCEMENT_TURN_THRESHOLD) {
-								if (locationsNeedingReinforcement[r.id] == null) {
-									locationsNeedingReinforcement[r.id] = new MapLocation(what-REINFORCEMENT_REQUEST_OFFSET, -1);
-								} else {
-									locationsNeedingReinforcement[r.id] = new MapLocation(locationsNeedingReinforcement[r.id].getX(), what-REINFORCEMENT_REQUEST_OFFSET);
-									reinforcementLocation = locationsNeedingReinforcement[r.id];
-								}
-							}
 						} else if (what == PILGRIM_WANTS_A_CHURCH) {
 							friendlyUnits[SPECS.PILGRIM]++;
 							if (me.turn >= ALLOW_CHURCHES_TURN_THRESHOLD) {
@@ -1482,8 +1466,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (distressBroadcastDistance > 0) {
 				communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, distressBroadcastDistance);
-			} else if (reinforcementLocation != null) {
-				communications.sendRadio(reinforcementLocation.hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance(false));
 			} else if (fuel >= FUEL_FOR_SWARM) {
 				// Maybe we are in a good position... attack?
 
@@ -1643,15 +1625,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class PilgrimController extends MobileRobotController {
 
 		private static final int DANGER_THRESHOLD = 8;
-		private static final int OCCUPIED_THRESHOLD = 100;
-		private static final int CONSECUTIVE_ANNOYED_THRESHOLD = 50;
+		private static final int OCCUPIED_THRESHOLD = 15;
 		private static final int DONT_GIVE_THRESHOLD = 5;
-		private static final int WANT_CHURCH_DISTANCE = 50;
+		private static final int WANT_CHURCH_DISTANCE = 80;
 
 		private int[][] resourceIsOccupied;
-		private MapLocation annoyingEnemyUnit;
-		private int lastTurnAnnoyed;
 		private int lastGave;
+
+		private int myCluster;
 
 		private LinkedList<MapLocation> karboniteLocs, fuelLocs;
 
@@ -1659,8 +1640,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			super();
 
 			resourceIsOccupied = new int[boardSize][boardSize];
-			annoyingEnemyUnit = null;
-			lastTurnAnnoyed = 0;
 			lastGave = 0;
 
 			karboniteLocs = new LinkedList<>();
@@ -1671,6 +1650,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		Action runSpecificTurn() {
 
 			if (me.turn == 1) {
+				// get what cluster we're assigned to
+				Robot castle = getRobot(myHome.get(visibleRobotMap));
+				if (isRadioing(castle) && ((castle.signal & WORKER_SEND_MASK) == WORKER_SEND_MASK)) {
+					myCluster = castle.signal ^ WORKER_SEND_MASK;
+				} else {
+					log("wtf my castle didn't tell me where to go??");
+					log("going to cluster 1, why not");
+					myCluster = 1;
+				}
+
 				noteResourceLocations();
 			}
 
@@ -1725,28 +1714,28 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			if (myLoc.distanceSquaredTo(myHome) >= WANT_CHURCH_DISTANCE) {
-				myCastleTalk = PILGRIM_WANTS_A_CHURCH;
-			} else {
-				myCastleTalk = me.unit;
-			}
+			boolean churchIsBuilt = false;
 
-			if (annoyingEnemyUnit != null) {
-				myCastleTalk = annoyingEnemyUnit.getY() + REINFORCEMENT_REQUEST_OFFSET;
-				annoyingEnemyUnit = null;
-			}
-
-			if (globalRound >= READY_TO_SEND_REINFORCEMENT_TURN_THRESHOLD &&
-				thresholdOk(lastTurnAnnoyed, CONSECUTIVE_ANNOYED_THRESHOLD)) {
-
-				for (Robot r: visibleRobots) {
-					if (isVisible(r) && r.team != me.team && isPotentialResourceCompetitor(r.unit)) {
-						annoyingEnemyUnit = createLocation(r);
-						myCastleTalk = annoyingEnemyUnit.getX() + REINFORCEMENT_REQUEST_OFFSET;
-						lastTurnAnnoyed = me.turn;
-						break;
+			myCastleTalk = me.unit;
+			// Ask for a church nicely
+			if (myLoc.distanceSquaredTo(clusterCentroid[myCluster]) <= WANT_CHURCH_DISTANCE) {
+				// check if a church is already there
+				int id = clusterCentroid[myCluster].get(visibleRobotMap);
+				if (id == 0) {
+					myCastleTalk = PILGRIM_WANTS_A_CHURCH;
+				} else if (id != -1) {
+					Robot r = getRobot(clusterCentroid[myCluster].get(visibleRobotMap));
+					if (r.unit != SPECS.CASTLE) {
+						myCastleTalk = PILGRIM_WANTS_A_CHURCH;
+					} else {
+						churchIsBuilt = true;
 					}
 				}
+			}
+
+			if (me.turn == 1) {
+				// announce to the world where we're going
+				myCastleTalk = myCluster + CLUSTER_ASSIGNMENT_OFFSET;
 			}
 
 			if (myAction == null && myLoc.get(isDangerous) == me.turn) {
@@ -1784,32 +1773,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null &&
-				(myLoc.get(karboniteMap) /* || myLoc.get(fuelMap) */ ) &&
-				myLoc.distanceSquaredTo(myHome) >= WANT_CHURCH_DISTANCE &&
+				(myLoc.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
 				karbonite >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
 				fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
 
-				Direction buildDir = null;
-				for (int i = 0; i < 8; i++) {
-					if (myLoc.add(dirs[i]).isOccupiable() &&
-						!myLoc.add(dirs[i]).get(karboniteMap) &&
-						!myLoc.add(dirs[i]).get(fuelMap)) {
-
-						buildDir = dirs[i];
-						break;
-					}
-				}
-				if (buildDir == null) {
-					for (int i = 0; i < 8; i++) {
-						if (myLoc.add(dirs[i]).isOccupiable()) {
-							buildDir = dirs[i];
-							break;
-						}
-					}
-				}
-				if (buildDir != null) {
-					myAction = buildUnit(SPECS.CHURCH, buildDir);
-				}
+				myAction = buildUnit(SPECS.CHURCH, myLoc.directionTo(clusterCentroid[myCluster]));
 			}
 
 			if (myAction == null) {
@@ -1823,8 +1791,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
-							if (location.get(visibleRobotMap) > 0) {
+							if (location.get(visibleRobotMap) > 0 || location.get(clusterId) != myCluster) {
 								return false;
+							}
+
+							// we could build a church that would be nice
+							if (!churchIsBuilt &&
+								(location.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
+								karbonite >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
+								fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
+
+								return true;
 							}
 
 							if (prioritiseKarbonite) {
@@ -1908,6 +1885,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int i = 0; i < boardSize; i++) {
 				for (int j = 0; j < boardSize; j++) {
 					MapLocation loc = new MapLocation(i, j);
+					if (loc.get(clusterId) != myCluster) continue;
 					if (loc.get(karboniteMap)) {
 						karboniteLocs.add(loc);
 					}
