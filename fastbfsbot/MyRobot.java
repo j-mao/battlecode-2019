@@ -52,10 +52,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private int[][] damageDoneToSquare;
 
 	// Cluster work
+	private static final int MAX_NUMBER_CLUSTERS = 50;
+	private static final int CLUSTER_DISTANCE = 9;
 	private int[][] clusterId;
 	private MapLocation[] clusterCentroid;
 	private int[] clusterSize;
-	private int numClusters;
+	private int numberOfClusters;
 
 	// Instant messaging: radio
 	private static final int WORKER_SEND_MASK = 0x6000;
@@ -100,9 +102,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
 			knownStructuresCoords = new LinkedList<>();
 			damageDoneToSquare = new int[boardSize][boardSize];
+			clusterId = new int[boardSize][boardSize];
+			clusterCentroid = new MapLocation[MAX_NUMBER_CLUSTERS];
+			numberOfClusters = 0;
+			clusterSize = new int[MAX_NUMBER_CLUSTERS];
 
 			rng = new SimpleRandom();
-			communications = new EncryptedCommunicator();
+			communications = new PlaintextCommunicator();
 			myBfsSolver = new BfsSolver();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
@@ -124,6 +130,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			determineSymmetricOrientation();
+			noteResourceClusters();
 
 			if (me.unit == SPECS.CASTLE) {
 				mySpecificRobotController = new CastleController();
@@ -359,6 +366,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	 * The metric for that is, within a step of (0, 2) or (1, 1) of actually being in danger
 	 * This is to prevent awkward situations whereby in a single turn, a unit goes from being safe to being absolutely helpless
 	 */
+
 	private void noteDangerousCells() {
 		for (Robot r: visibleRobots) {
 			if (isVisible(r) && r.team != me.team && isAggressiveRobot(r.unit)) {
@@ -478,6 +486,79 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			symmetryStatus = BoardSymmetryType.VER_SYMMETRICAL;
 		}
 		
+	}
+
+	private LinkedList<MapLocation> currentCluster;
+	private int currentClusterMinX, currentClusterMaxX;
+	private int currentClusterMinY, currentClusterMaxY;
+	private void dfsAssignClusters(MapLocation loc, int cluster) {
+		loc.set(clusterId, cluster);
+		clusterSize[cluster]++;
+		currentCluster.add(loc);
+		if (loc.getX() > currentClusterMaxX) {
+			currentClusterMaxX = loc.getX();
+		}
+		if (loc.getX() < currentClusterMinX) {
+			currentClusterMinX = loc.getX();
+		}
+		if (loc.getY() > currentClusterMaxY) {
+			currentClusterMaxY = loc.getY();
+		}
+		if (loc.getY() < currentClusterMinY) {
+			currentClusterMinY = loc.getY();
+		}
+		for (int i = -3; i <= 3; i++) {
+			for (int j = -3; j <= 3; j++) {
+				Direction dir = new Direction(i, j);
+				if (dir.getMagnitude() <= CLUSTER_DISTANCE) {
+					MapLocation newLoc = loc.add(dir);
+					if (newLoc.isOnMap() && 
+					newLoc.get(clusterId) == 0 &&
+					(newLoc.get(karboniteMap) || newLoc.get(fuelMap))) {
+						dfsAssignClusters(newLoc, cluster);
+					}
+				}
+			}
+		}
+	}
+	private int findCentroidValue(MapLocation loc) {
+		int val = 0;
+		Iterator<MapLocation> iterator = currentCluster.iterator();
+		while (iterator.hasNext()) {
+			val += loc.distanceSquaredTo(iterator.next());
+		}
+		return val;
+	}
+	private void noteResourceClusters() {
+		currentCluster = new LinkedList<>();
+		for (int i = 0; i < boardSize; i++) {
+			for (int j = 0; j < boardSize; j++) {
+				MapLocation loc = new MapLocation(i, j);
+				if ((loc.get(karboniteMap) || loc.get(fuelMap)) &&
+				loc.get(clusterId) == 0) {
+					currentCluster.clear();
+					currentClusterMaxX = currentClusterMaxY = 0;
+					currentClusterMinX = currentClusterMinY = boardSize-1;
+					dfsAssignClusters(loc, ++numberOfClusters);
+
+					// Find the centroid
+					int bestCentroidValue = Integer.MAX_VALUE;
+					for (int x = currentClusterMinX-1; x <= currentClusterMaxX+1; x++) {
+						for (int y = currentClusterMinY-1; y <= currentClusterMaxY+1; y++) {
+							loc = new MapLocation(x, y);
+							if (loc.isOnMap() && loc.get(map) == MAP_PASSABLE &&
+								!loc.get(karboniteMap) && !loc.get(fuelMap)) {
+								int centroidValue = findCentroidValue(loc);
+								if (centroidValue < bestCentroidValue) {
+									bestCentroidValue = centroidValue;
+									clusterCentroid[numberOfClusters] = loc;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	//////// Helper functions ////////
@@ -1218,8 +1299,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			structureLocations = new TreeMap<>();
 
-			clusterVisitOrder = new int[numClusters+1];
-			numPilgrimsAtCluster = new int[numClusters+1];
+			clusterVisitOrder = new int[numberOfClusters+1];
+			numPilgrimsAtCluster = new int[numberOfClusters+1];
 
 			isCastle = new boolean[SPECS.MAX_ID+1];
 
@@ -1235,14 +1316,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (me.turn == 1) {
 				// Put clusters in order
-				for (int i = 0; i < numClusters; i++) {
+				for (int i = 0; i < numberOfClusters; i++) {
 					clusterVisitOrder[i] = i + 1;
 				}
 
 				// Bubble sort because I don't trust the transpiler to Collections.sort
 				for (boolean cont = true; cont; ) {
 					cont = false;
-					for (int i = 1; i < numClusters; i++) {
+					for (int i = 1; i < numberOfClusters; i++) {
 						if (myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]]) < myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i-1]])) {
 							int tmp = clusterVisitOrder[i];
 							clusterVisitOrder[i] = clusterVisitOrder[i-1];
@@ -1266,7 +1347,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			boolean saveKarboniteForChurch = false;
 			int[] friendlyUnits = new int[6];
 
-			for (int i = 1; i <= numClusters; i++) {
+			for (int i = 1; i <= numberOfClusters; i++) {
 				numPilgrimsAtCluster[i] = 0;
 			}
 
@@ -1283,7 +1364,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						}
 					} else if (what >= CASTLE_SECRET_TALK_OFFSET && what < CLUSTER_ASSIGNMENT_OFFSET) {
 						friendlyUnits[SPECS.CASTLE]++;
-					} else if (what >= CLUSTER_ASSIGNMENT_OFFSET && what <= CLUSTER_ASSIGNMENT_OFFSET+numClusters) {
+					} else if (what >= CLUSTER_ASSIGNMENT_OFFSET && what <= CLUSTER_ASSIGNMENT_OFFSET+numberOfClusters) {
 						friendlyUnits[SPECS.PILGRIM]++;
 						numPilgrimsAtCluster[what-CLUSTER_ASSIGNMENT_OFFSET]++;
 					} else if (what == PILGRIM_WANTS_A_CHURCH) {
@@ -1317,10 +1398,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			int pilgrimClusterAssignment = -1;
-			for (int i = 0; i < numClusters; i++) {
+			for (int i = 0; i < numberOfClusters; i++) {
 				// TODO please don't walk to clusters that obviously belong to enemy
 				if (numPilgrimsAtCluster[clusterVisitOrder[i]] < clusterSize[clusterVisitOrder[i]]) {
-					pilgrimClusterAssignment = i;
+					pilgrimClusterAssignment = clusterVisitOrder[i];
 					break;
 				}
 			}
@@ -1338,7 +1419,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (toBuild == -1 && myAction == null) {
-				if (isFirstCastle && me.turn == 1) {
+				if (karbonite >= SPECS.INITIAL_KARBONITE - SPECS.UNITS[SPECS.PILGRIM].CONSTRUCTION_KARBONITE && me.turn == 1) {
 					toBuild = SPECS.PILGRIM;
 				} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
 					karbonite > prevKarbonite &&
@@ -1351,15 +1432,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						// TODO change this condition to involve cluster assignment
 						toBuild = SPECS.PILGRIM;
 					} else {
-						if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
+						/*if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
 							friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
 
 							toBuild = SPECS.PREACHER;
-						} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {
+						} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {*/
 							toBuild = SPECS.PROPHET;
-						} else {
+						/*} else {
 							toBuild = SPECS.CRUSADER;
-						}
+						}*/
 						if (saveKarboniteForChurch &&
 							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) {
 
@@ -1594,9 +1675,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private static final int DANGER_THRESHOLD = 8;
 		private static final int OCCUPIED_THRESHOLD = 100;
 		private static final int CONSECUTIVE_ANNOYED_THRESHOLD = 50;
+		private static final int DONT_GIVE_THRESHOLD = 5;
 		private static final int WANT_CHURCH_DISTANCE = 50;
 
 		private int[][] resourceIsOccupied;
+
+		private int lastGave;
 
 		private LinkedList<MapLocation> karboniteLocs, fuelLocs;
 
@@ -1604,6 +1688,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			super();
 
 			resourceIsOccupied = new int[boardSize][boardSize];
+
+			lastGave = 0;
 
 			karboniteLocs = new LinkedList<>();
 			fuelLocs = new LinkedList<>();
@@ -1678,9 +1764,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null &&
-				(me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY)) {
+				(me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) &&
+				thresholdOk(lastGave, DONT_GIVE_THRESHOLD)) {
 
 				myAction = tryToGiveTowardsLocation(myHome);
+				if (myAction != null) { 
+					lastGave = me.turn;
+				}
 			}
 
 			boolean prioritiseKarbonite = karbonite * karboniteToFuelRatio(globalRound) < fuel && fuel > minimumFuelAmount(globalRound);
@@ -1844,7 +1934,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Iterator<MapLocation> iterator = resourceLocs.iterator();
 			while (iterator.hasNext()) {
 				MapLocation location = iterator.next();
-				if (thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD)) {
+				if (thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD) &&
+					thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
 					ans++;
 				}
 			}
