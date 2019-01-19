@@ -476,19 +476,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	//////// Helper functions ////////
 
-	private Action move(Direction dir) {
+	private MoveAction move(Direction dir) {
 		return move(dir.getX(), dir.getY());
 	}
 
-	private Action buildUnit(int unitType, Direction dir) {
+	private BuildAction buildUnit(int unitType, Direction dir) {
 		return buildUnit(unitType, dir.getX(), dir.getY());
 	}
 
-	private Action give(Direction dir, int k, int f) {
+	private GiveAction give(Direction dir, int k, int f) {
 		return give(dir.getX(), dir.getY(), k, f);
 	}
 
-	private Action attack(Direction dir) {
+	private AttackAction attack(Direction dir) {
 		return attack(dir.getX(), dir.getY());
 	}
 
@@ -1040,8 +1040,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return distance;
 		}
 
-		protected Action tryToBuildInAnAwesomeDirection(int toBuild) {
-			Action myAction = null;
+		protected BuildAction tryToBuildInAnAwesomeDirection(int toBuild) {
+			BuildAction myAction = null;
 
 			if (toBuild == SPECS.PILGRIM) {
 				// TODO build towards resources rather than just anywhere
@@ -1098,8 +1098,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			myHome = newHome;
 		}
 
-		protected Action tryToGiveTowardsLocation(MapLocation target) {
-			Action myAction = null;
+		protected GiveAction tryToGiveTowardsLocation(MapLocation target) {
+			GiveAction myAction = null;
 			for (int dir = 0; dir < 8; dir++) {
 				MapLocation location = myLoc.add(dirs[dir]);
 				if (location.isOnMap() && target.distanceSquaredTo(myLoc) > target.distanceSquaredTo(location)) {
@@ -1118,7 +1118,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		protected Action tryToGoSomewhereNotDangerous(int maxDispl, int maxSpeed) {
+		protected MoveAction tryToGoSomewhereNotDangerous(int maxDispl, int maxSpeed) {
 			// TODO maybe return null if we're already safe?
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
 				Direction dir = new Direction(i, j);
@@ -1141,10 +1141,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return null;
 		}
 
-		protected Action tryToAttack() {
+		protected AttackAction tryToAttack() {
 			// TODO should we choose not to attack if the value of the attack is negative?
 			// would be a shame if we got stuck in a situation where we got eaten alive but didn't want to attack
-			Action myAction = null;
+			AttackAction myAction = null;
 			int bestValue = Integer.MIN_VALUE;
 			int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].ATTACK_RADIUS[1]));
 			MapLocation bestLoc = null;
@@ -1378,11 +1378,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (requiredToNotify) {
 							myCastleTalk = (myCastleTalk - CASTLE_SECRET_TALK_OFFSET + 1) % 3 + CASTLE_SECRET_TALK_OFFSET;
 						}
-					} else {
-						// Couldn't build, let's just fight the enemy or whatever
-						myAction = tryToAttack();
 					}
 				}
+			}
+
+			// Didn't do anything productive, let's try to attack again
+			if (myAction == null) {
+				myAction = tryToAttack();
 			}
 
 			if (distressBroadcastDistance > 0) {
@@ -1407,8 +1409,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private Action tryToAttack() {
-			Action res = null;
+		private AttackAction tryToAttack() {
+			AttackAction res = null;
 			int cdps = 0, cdist = 420420;
 			boolean cwithin = false;
 			for (Robot r: visibleRobots) {
