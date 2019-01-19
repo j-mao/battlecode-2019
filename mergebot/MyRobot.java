@@ -1038,8 +1038,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					dir.getMagnitude() <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
 
 					MapLocation location = myLoc.add(dir);
-					// Game spec doesn't prohibit attacking impassable terrain anymore
-					if (location.isOnMap() /* && location.get(map) == MAP_PASSABLE */ ) {
+					// Game spec prohibits attacking impassable terrain
+					if (location.isOnMap() && location.get(map) == MAP_PASSABLE) {
 						int altValue = getAttackValue(location);
 						if (altValue > bestValue) {
 							myAction = attack(dir);
