@@ -1426,12 +1426,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					toBuild = SPECS.PILGRIM;
 				} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
 					karbonite > prevKarbonite &&
-					friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
+					friendlyUnits[SPECS.PILGRIM] < (numKarbonite+numFuel+1)/2) {
 					// TODO change this condition to involve cluster assignment
 
 					toBuild = SPECS.PILGRIM;
 				} else if (me.turn >= KARB_RESERVE_TURN_THRESHOLD) {
-					if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
+					if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+numFuel+1)/2) {
 						// TODO change this condition to involve cluster assignment
 						toBuild = SPECS.PILGRIM;
 					} else {
@@ -1678,7 +1678,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private static final int DANGER_THRESHOLD = 8;
 		private static final int OCCUPIED_THRESHOLD = 15;
 		private static final int DONT_GIVE_THRESHOLD = 5;
-		private static final int WANT_CHURCH_DISTANCE = 80;
+		private static final int WANT_CHURCH_DISTANCE = 30;
 
 		private int[][] resourceIsOccupied;
 
@@ -1788,8 +1788,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 				// Could just be next to our castle lol
 				if (!churchIsBuilt) {
-					// TODO actually make this a constant
-					if (clusterCentroid[myCluster].distanceSquaredTo(myHome) <= 25) {
+					if (clusterCentroid[myCluster].distanceSquaredTo(myHome) <= WANT_CHURCH_DISTANCE) {
 						churchIsBuilt = true;
 						clusterCentroid[myCluster] = myHome;
 						myCastleTalk = myCluster + CLUSTER_ASSIGNMENT_OFFSET;
@@ -1852,17 +1851,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
-							if (location.get(visibleRobotMap) > 0 || location.get(clusterId) != myCluster) {
-								return false;
+							// We could try to give
+							if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
+								me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
+
+								for (int i = 0; i < 8; i++) {
+									MapLocation adj = location.add(dirs[i]);
+									if (adj.isOnMap() && isFriendlyStructure(adj)) {
+										return true;
+									}
+								}
 							}
 
-							// we could build a church that would be nice
+							// We could build a church that would be nice
 							if (!churchIsBuilt &&
 								(location.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
 								karbonite >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
 								fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
 
 								return true;
+							}
+
+							if (location.get(clusterId) != myCluster) {
+								return false;
 							}
 
 							if (prioritiseKarbonite) {
@@ -1881,16 +1892,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								}
 							}
 
-							if (me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY ||
-								me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) {
-
-								for (int i = 0; i < 8; i++) {
-									MapLocation adj = location.add(dirs[i]);
-									if (adj.isOnMap() && isFriendlyStructure(adj)) {
-										return true;
-									}
-								}
-							}
 							return false;
 						},
 						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
