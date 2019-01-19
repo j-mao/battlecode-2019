@@ -1296,6 +1296,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// Radio of units, assumes crusader <= preacher <= prophet
 		private static final int CRUSADER_TO_PREACHER = 100;
 		private static final int PREACHER_TO_PROPHET = 2;
+		private static final int TURTLE_FUEL_THRESHOLD = 2000; // Fuel we require post round 200 to build turtle units
 
 		CastleController() {
 			super();
@@ -1450,8 +1451,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						/*} else {
 							toBuild = SPECS.CRUSADER;
 						}*/
-						if (saveKarboniteForChurch &&
-							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) {
+						if ((saveKarboniteForChurch &&
+							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
+							(me.turn > 250 && fuel < TURTLE_FUEL_THRESHOLD)) {
 
 							toBuild = -1;
 						}
