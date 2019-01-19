@@ -35,7 +35,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Game staging constants
 	private static final int KARB_RESERVE_TURN_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
 	private static final int ALLOW_CHURCHES_TURN_THRESHOLD = 50; // When we start to allow pilgrims to build churches
-	private static final int READY_TO_SEND_REINFORCEMENT_TURN_THRESHOLD = 100; // When we allow and respond to calls for help
+	private static final int READY_TO_SEND_REINFORCEMENT_TURN_THRESHOLD = 1000; // When we allow and respond to calls for help
 	private static final int FUEL_FOR_SWARM = 2500; // Min fuel before we allow a swarm
 
 	// Data left over from previous round
@@ -1557,11 +1557,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private static final int DANGER_THRESHOLD = 8;
 		private static final int OCCUPIED_THRESHOLD = 100;
 		private static final int CONSECUTIVE_ANNOYED_THRESHOLD = 50;
+		private static final int DONT_GIVE_THRESHOLD = 5;
 		private static final int WANT_CHURCH_DISTANCE = 50;
 
 		private int[][] resourceIsOccupied;
 		private MapLocation annoyingEnemyUnit;
 		private int lastTurnAnnoyed;
+		private int lastGave;
 
 		private LinkedList<MapLocation> karboniteLocs, fuelLocs;
 
@@ -1571,6 +1573,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			resourceIsOccupied = new int[boardSize][boardSize];
 			annoyingEnemyUnit = null;
 			lastTurnAnnoyed = 0;
+			lastGave = 0;
 
 			karboniteLocs = new LinkedList<>();
 			fuelLocs = new LinkedList<>();
@@ -1663,9 +1666,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null &&
-				(me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY)) {
+				(me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY || me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY) &&
+				thresholdOk(lastGave, DONT_GIVE_THRESHOLD)) {
 
 				myAction = tryToGiveTowardsLocation(myHome);
+				if (myAction != NULL) { 
+					lastGave = me.turn;
+				}
 			}
 
 			boolean prioritiseKarbonite = karbonite * karboniteToFuelRatio(globalRound) < fuel && fuel > minimumFuelAmount(globalRound);
