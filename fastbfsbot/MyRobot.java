@@ -763,34 +763,39 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				new Direction(-3, 0),
 			}
 		};
+		/**
+		 * Don't make the mistake that I made
+		 * These bits are from most significant to least significant
+		 * Meaning that they are in reverse order to the declarations above
+		 */
 		private final int[][] succeedMask = {
 			{
-				0b0001111111111100,
-				0b1000111111111111,
-				0b1100000111111111,
-				0b1111100011111111,
-				0b1111110000011111,
-				0b1111111110001111,
-				0b1111111111000001,
-				0b1111111111111000
+				0b0011111111111000,
+				0b1111111111110001,
+				0b1111111110000011,
+				0b1111111100011111,
+				0b1111100000111111,
+				0b1111000111111111,
+				0b1000001111111111,
+				0b0001111111111111
 			},
 			{
 				0b1111,
-				0b0111,
-				0b0111,
-				0b0111,
-				0b1111,
-				0b1011,
-				0b1011,
-				0b1011,
-				0b1111,
-				0b1101,
-				0b1101,
-				0b1101,
-				0b1111,
 				0b1110,
 				0b1110,
-				0b1110
+				0b1110,
+				0b1111,
+				0b1101,
+				0b1101,
+				0b1101,
+				0b1111,
+				0b1011,
+				0b1011,
+				0b1011,
+				0b1111,
+				0b0111,
+				0b0111,
+				0b0111
 			},
 			{0, 0, 0, 0}
 		};
