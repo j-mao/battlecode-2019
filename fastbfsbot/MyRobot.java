@@ -1357,7 +1357,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (Robot r: visibleRobots) {
 				if (r.team == me.team) {
 					int what = communications.readCastle(r);
-					if (what < LOCATION_SHARING_OFFSET) {
+					if (what == Communicator.NO_MESSAGE) {
+						// It is a new robot, not much we can do
+					} else if (what < LOCATION_SHARING_OFFSET) {
 						friendlyUnits[what]++;
 					} else if (what >= LOCATION_SHARING_OFFSET && what < CASTLE_SECRET_TALK_OFFSET) {
 						if (me.turn <= 3) {
@@ -1402,10 +1404,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			int pilgrimClusterAssignment = -1;
 			for (int i = 0; i < numberOfClusters; i++) {
-				// TODO please don't walk to clusters that obviously belong to enemy
 				if (numPilgrimsAtCluster[clusterVisitOrder[i]] < clusterSize[clusterVisitOrder[i]]) {
-					pilgrimClusterAssignment = clusterVisitOrder[i];
-					break;
+					// Only go to clusters on my half of the board
+					if (myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]]) <
+						myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]].opposite(symmetryStatus))) {
+
+						pilgrimClusterAssignment = clusterVisitOrder[i];
+						break;
+					}
 				}
 			}
 
@@ -1676,27 +1682,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class PilgrimController extends MobileRobotController {
 
 		private static final int DANGER_THRESHOLD = 8;
-		private static final int OCCUPIED_THRESHOLD = 15;
 		private static final int DONT_GIVE_THRESHOLD = 5;
 		private static final int WANT_CHURCH_DISTANCE = 30;
-
-		private int[][] resourceIsOccupied;
 
 		private int lastGave;
 
 		private int myCluster;
 
-		private LinkedList<MapLocation> karboniteLocs, fuelLocs;
-
 		PilgrimController() {
 			super();
 
-			resourceIsOccupied = new int[boardSize][boardSize];
-
 			lastGave = 0;
-
-			karboniteLocs = new LinkedList<>();
-			fuelLocs = new LinkedList<>();
 		}
 
 		@Override
@@ -1712,8 +1708,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					log("going to cluster 1, why not");
 					myCluster = 1;
 				}
-
-				noteResourceLocations();
 			}
 
 			Action myAction = null;
@@ -1722,33 +1716,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// Note occupied cells
 			boolean redoBfs = false;
-
-			Integer maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
-			for (int i = -maxDispl; i <= maxDispl; ++i) {
-				for (int j = -maxDispl; j <= maxDispl; ++j) {
-					if (i == 0 && j == 0) continue;
-					Direction dir = new Direction(i, j);
-					if (dir.getMagnitude() <= SPECS.UNITS[me.unit].VISION_RADIUS) {
-						MapLocation curr = myLoc.add(dir);
-						// are there some units we should ignore
-						// when checking occupation states?
-						// who knows? doesn't seem that essential to
-						// worry about right now
-						if (!curr.equals(myLoc) && curr.isOnMap() &&
-							(curr.get(karboniteMap) || curr.get(fuelMap))) {
-
-							if (curr.isOccupiable()) {
-								if (curr.get(resourceIsOccupied) != -OCCUPIED_THRESHOLD) {
-									redoBfs = true;
-								}
-								curr.set(resourceIsOccupied, -OCCUPIED_THRESHOLD);
-							} else {
-								curr.set(resourceIsOccupied, me.turn);
-							}
-						}
-					}
-				}
-			}
 
 			// Check if there is a new home closer to us
 			// or if we should note that an attack has ended
@@ -1811,23 +1778,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			boolean prioritiseKarbonite = karbonite * karboniteToFuelRatio(globalRound) < fuel && fuel > minimumFuelAmount(globalRound);
-			// If there is none of the resource we are prioritising, swap
-			if (prioritiseKarbonite && numberOfUnoccupiedResources(karboniteLocs) == 0) {
-				prioritiseKarbonite = false;
-			} else if (!prioritiseKarbonite && numberOfUnoccupiedResources(fuelLocs) == 0) {
-				prioritiseKarbonite = true;
-			}
+			if (myAction == null &&
+				((myLoc.get(karboniteMap) && me.karbonite < SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
+				(myLoc.get(fuelMap) && me.fuel < SPECS.UNITS[me.unit].FUEL_CAPACITY))) {
 
-			if (prioritiseKarbonite && myAction == null && (
-				(myLoc.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
-				(myLoc.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY))) {
-
-				myAction = mine();
-			} else if (!prioritiseKarbonite && myAction == null && (
-				(myLoc.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) ||
-				(myLoc.get(karboniteMap) && me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY))) {
-
+				// TODO priotise karbonite in opening
 				myAction = mine();
 			}
 
@@ -1843,7 +1798,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null ||
-					!thresholdOk(myBfsSolver.getDest().get(resourceIsOccupied), OCCUPIED_THRESHOLD) ||
 					redoBfs ||
 					!myLoc.add(bestDir).isOccupiable() ||
 					myLoc.add(bestDir).get(isDangerous) == me.turn ||
@@ -1876,31 +1830,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								return false;
 							}
 
-							if (prioritiseKarbonite) {
-								if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
-									return true;
-								}
-								if (location.get(fuelMap) && me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) {
-									return true;
-								}
-							} else {
-								if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) {
-									return true;
-								}
-								if (location.get(karboniteMap) && me.fuel == SPECS.UNITS[me.unit].FUEL_CAPACITY && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
-									return true;
-								}
+							// TODO prioritise karbonite in opening
+							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
+								return true;
+							}
+							if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) {
+								return true;
 							}
 
 							return false;
 						},
 						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
 						(location)->{
-							if (location.get(karboniteMap) || location.get(fuelMap)) {
-								if (!thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD)) {
-									return false;
-								}
-							}
 							return location.isOccupiable() && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD);
 						});
 					bestDir = myBfsSolver.nextStep();
@@ -1940,36 +1881,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			else if (round < 100) return 500;
 			else if (round < 150) return 1000;
 			else return 2000;
-		}
-
-		// Store the coordinates of all fuel and karbonite deposits
-		private void noteResourceLocations() {
-			for (int i = 0; i < boardSize; i++) {
-				for (int j = 0; j < boardSize; j++) {
-					MapLocation loc = new MapLocation(i, j);
-					if (loc.get(clusterId) != myCluster) continue;
-					if (loc.get(karboniteMap)) {
-						karboniteLocs.add(loc);
-					}
-					if (loc.get(fuelMap)) {
-						fuelLocs.add(loc);
-					}
-				}
-			}
-		}
-
-		// Pass in karboniteLocs or fuelLocs to get the number of unoccupied of that resource
-		private int numberOfUnoccupiedResources(LinkedList<MapLocation> resourceLocs) {
-			int ans = 0;
-			Iterator<MapLocation> iterator = resourceLocs.iterator();
-			while (iterator.hasNext()) {
-				MapLocation location = iterator.next();
-				if (thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD) &&
-					thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
-					ans++;
-				}
-			}
-			return ans;
 		}
 	}
 
