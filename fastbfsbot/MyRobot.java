@@ -1306,7 +1306,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (toBuild == -1 && myAction == null) {
-				if (isFirstCastle && me.turn == 1) {
+				if (karbonite >= SPECS.INITIAL_KARBONITE - SPECS.UNITS[SPECS.PILGRIM].CONSTRUCTION_KARBONITE && me.turn == 1) {
 					toBuild = SPECS.PILGRIM;
 				} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
 					karbonite > prevKarbonite &&
@@ -1317,15 +1317,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+3)/2) {
 						toBuild = SPECS.PILGRIM;
 					} else {
-						if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
+						/*if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
 							friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
 
 							toBuild = SPECS.PREACHER;
-						} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {
+						} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {*/
 							toBuild = SPECS.PROPHET;
-						} else {
+						/*} else {
 							toBuild = SPECS.CRUSADER;
-						}
+						}*/
 						if (saveKarboniteForChurch &&
 							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) {
 
@@ -1670,7 +1670,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				thresholdOk(lastGave, DONT_GIVE_THRESHOLD)) {
 
 				myAction = tryToGiveTowardsLocation(myHome);
-				if (myAction != NULL) { 
+				if (myAction != null) { 
 					lastGave = me.turn;
 				}
 			}
@@ -1836,7 +1836,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Iterator<MapLocation> iterator = resourceLocs.iterator();
 			while (iterator.hasNext()) {
 				MapLocation location = iterator.next();
-				if (thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD)) {
+				if (thresholdOk(location.get(resourceIsOccupied), OCCUPIED_THRESHOLD) &&
+					thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
 					ans++;
 				}
 			}
