@@ -70,6 +70,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private MapLocation myLoc;
 	private int globalRound;
 
+	// Clusters
+	private static final int MAX_NUMBER_CLUSTERS = 50;
+	private static final int WORKER_SEND_MASK = 0x6000;
+	private static final int CLUSTER_DISTANCE = 9;
+	private int[][] clusterId;
+	private MapLocation[] clusterCentroid;
+	private int numberOfClusters;
+	private int[] clusterSize;
+
 	// Entry point for every turn
 	public Action turn() {
 
@@ -94,6 +103,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			knownStructuresSeenBefore = new boolean[boardSize][boardSize];
 			knownStructuresCoords = new LinkedList<>();
 			damageDoneToSquare = new int[boardSize][boardSize];
+			clusterId = new int[boardSize][boardSize];
+			clusterCentroid = new MapLocation[MAX_NUMBER_CLUSTERS];
+			numberOfClusters = 0;
+			clusterSize = new int[MAX_NUMBER_CLUSTERS];
 
 			rng = new SimpleRandom();
 			communications = new EncryptedCommunicator();
@@ -118,6 +131,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			determineSymmetricOrientation();
+			noteResourceClusters();
 
 			if (me.unit == SPECS.CASTLE) {
 				mySpecificRobotController = new CastleController();
@@ -353,6 +367,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	 * The metric for that is, within a step of (0, 2) or (1, 1) of actually being in danger
 	 * This is to prevent awkward situations whereby in a single turn, a unit goes from being safe to being absolutely helpless
 	 */
+
 	private void noteDangerousCells() {
 		for (Robot r: visibleRobots) {
 			if (isVisible(r) && r.team != me.team && isAggressiveRobot(r.unit)) {
@@ -472,6 +487,79 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			symmetryStatus = BoardSymmetryType.VER_SYMMETRICAL;
 		}
 		
+	}
+
+	private LinkedList<MapLocation> currentCluster;
+	private int currentClusterMinX, currentClusterMaxX;
+	private int currentClusterMinY, currentClusterMaxY;
+	private void dfsAssignClusters(MapLocation loc, int cluster) {
+		loc.set(clusterId, cluster);
+		clusterSize[cluster]++;
+		currentCluster.add(loc);
+		if (loc.getX() > currentClusterMaxX) {
+			currentClusterMaxX = loc.getX();
+		}
+		if (loc.getX() < currentClusterMinX) {
+			currentClusterMinX = loc.getX();
+		}
+		if (loc.getY() > currentClusterMaxY) {
+			currentClusterMaxY = loc.getY();
+		}
+		if (loc.getY() < currentClusterMinY) {
+			currentClusterMinY = loc.getY();
+		}
+		for (int i = -3; i <= 3; i++) {
+			for (int j = -3; j <= 3; j++) {
+				Direction dir = new Direction(i, j);
+				if (dir.getMagnitude() <= CLUSTER_DISTANCE) {
+					MapLocation newLoc = loc.add(dir);
+					if (newLoc.isOnMap() && 
+					newLoc.get(clusterId) == 0 &&
+					(newLoc.get(karboniteMap) || newLoc.get(fuelMap))) {
+						dfsAssignClusters(newLoc, cluster);
+					}
+				}
+			}
+		}
+	}
+	private int findCentroidValue(MapLocation loc) {
+		int val = 0;
+		Iterator<MapLocation> iterator = currentCluster.iterator();
+		while (iterator.hasNext()) {
+			val += loc.distanceSquaredTo(iterator.next());
+		}
+		return val;
+	}
+	private void noteResourceClusters() {
+		currentCluster = new LinkedList<>();
+		for (int i = 0; i < boardSize; i++) {
+			for (int j = 0; j < boardSize; j++) {
+				MapLocation loc = new MapLocation(i, j);
+				if ((loc.get(karboniteMap) || loc.get(fuelMap)) &&
+				loc.get(clusterId) == 0) {
+					currentCluster.clear();
+					currentClusterMaxX = currentClusterMaxY = 0;
+					currentClusterMinX = currentClusterMinY = boardSize-1;
+					dfsAssignClusters(loc, ++numberOfClusters);
+
+					// Find the centroid
+					int bestCentroidValue = Integer.MAX_VALUE;
+					for (int x = currentClusterMinX-1; x <= currentClusterMaxX+1; x++) {
+						for (int y = currentClusterMinY-1; y <= currentClusterMaxY+1; y++) {
+							loc = new MapLocation(x, y);
+							if (loc.isOnMap() && loc.get(map) == MAP_PASSABLE &&
+								!loc.get(karboniteMap) && !loc.get(fuelMap)) {
+								int centroidValue = findCentroidValue(loc);
+								if (centroidValue < bestCentroidValue) {
+									bestCentroidValue = centroidValue;
+									clusterCentroid[numberOfClusters] = loc;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	//////// Helper functions ////////
