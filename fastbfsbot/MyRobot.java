@@ -2292,10 +2292,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						} else if ((what >> 12) == (ATTACK_LOCATION_MASK >> 12) && r.x == myHome.getX() && r.y == myHome.getY()) {
 							possibleAttackLocation = new MapLocation(what&0xfff);
 						} else if (possibleAttackLocation != null && (what >> 12) == (ATTACK_ID_MASK >> 12) && r.x == myHome.getX() && r.y == myHome.getY()) {
-							if ((what&0xfff) <= me.id) {
-								mySpecificRobotController = new AttackerController(possibleAttackLocation, myHome);
-								return mySpecificRobotController.runTurn();
-							}
+							mySpecificRobotController = new AttackerController(possibleAttackLocation, myHome);
+							return mySpecificRobotController.runTurn();
 						}
 					}
 				}
