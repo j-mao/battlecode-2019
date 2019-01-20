@@ -144,11 +144,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (me.unit == SPECS.PILGRIM) {
 				mySpecificRobotController = new PilgrimController();
 			} else if (me.unit == SPECS.CRUSADER) {
-				mySpecificRobotController = new DefenderController();
+				mySpecificRobotController = new IdlingAttackerController();
 			} else if (me.unit == SPECS.PROPHET) {
-				mySpecificRobotController = new DefenderController();
+				mySpecificRobotController = new TurtlingProphetController();
 			} else if (me.unit == SPECS.PREACHER) {
-				mySpecificRobotController = new DefenderController();
+				mySpecificRobotController = new IdlingAttackerController();
 			} else {
 				log("Error: I do not know what I am");
 				mySpecificRobotController = null;
@@ -2031,14 +2031,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
-	private class DefenderController extends MobileRobotController {
+	private class TurtlingProphetController extends MobileRobotController {
 
 		private MapLocation possibleAttackLocation = null;
-		DefenderController() {
+		TurtlingProphetController() {
 			super();
 		}
 
-		DefenderController(MapLocation newHome) {
+		TurtlingProphetController(MapLocation newHome) {
 			super(newHome);
 		}
 
@@ -2259,6 +2259,34 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
+	private class IdlingAttackerController extends MobileRobotController {
+
+		IdlingAttackerController() {
+			super();
+		}
+
+		IdlingAttackerController(MapLocation newHome) {
+			super(newHome);
+		}
+
+		@Override
+		Action runSpecificTurn() {
+
+			// TODO: Check for attack broadcast, and upgrade to AttackerController
+			// This includes:
+			// - swarm attacks (via ATTACK_ID_MASK and ATTACK_LOCATION_MASK)
+			// - distress attacks (via LONG_DISTANCE_MASK)
+
+			Action myAction = tryToAttack();
+
+			if (myAction == null) {
+				// TODO: walk towards an agreed location
+			}
+
+			return myAction;
+		}
+	}
+
 	private class AttackerController extends MobileRobotController {
 
 		private MapLocation myTarget;
@@ -2280,7 +2308,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myTarget.equals(myHome) &&
 				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
 
-				mySpecificRobotController = new DefenderController(myHome);
+				if (me.unit == SPECS.PROPHET) {
+					mySpecificRobotController = new TurtlingProphetController(myHome);
+				} else {
+					mySpecificRobotController = new IdlingAttackerController(myHome);
+				}
 				return mySpecificRobotController.runSpecificTurn();
 			}
 
