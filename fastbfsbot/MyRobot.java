@@ -57,6 +57,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private int[][] clusterId;
 	private MapLocation[] clusterCentroid;
 	private int[] clusterSize;
+	private LinkedList<MapLocation> inCluster[];
 	private int numberOfClusters;
 
 	// Instant messaging: radio
@@ -106,6 +107,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			clusterCentroid = new MapLocation[MAX_NUMBER_CLUSTERS];
 			numberOfClusters = 0;
 			clusterSize = new int[MAX_NUMBER_CLUSTERS];
+			inCluster = new LinkedList[MAX_NUMBER_CLUSTERS];
 
 			rng = new SimpleRandom();
 			communications = new EncryptedCommunicator();
@@ -489,14 +491,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	//////// Resource cluster solving library ////////
 
-	private LinkedList<MapLocation> currentCluster;
 	private int currentClusterMinX, currentClusterMaxX;
 	private int currentClusterMinY, currentClusterMaxY;
 
 	private void dfsAssignClusters(MapLocation loc, int cluster) {
 		loc.set(clusterId, cluster);
 		clusterSize[cluster]++;
-		currentCluster.add(loc);
+		inCluster[cluster].add(loc);
 		if (loc.getX() > currentClusterMaxX) {
 			currentClusterMaxX = loc.getX();
 		}
@@ -524,9 +525,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
-	private int findCentroidValue(MapLocation loc) {
+	private int findCentroidValue(MapLocation loc, int cluster) {
 		int val = 0;
-		Iterator<MapLocation> iterator = currentCluster.iterator();
+		Iterator<MapLocation> iterator = inCluster[cluster].iterator();
 		while (iterator.hasNext()) {
 			val += loc.distanceSquaredTo(iterator.next());
 		}
@@ -534,15 +535,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private void noteResourceClusters() {
-		currentCluster = new LinkedList<>();
 		for (int i = 0; i < boardSize; i++) {
 			for (int j = 0; j < boardSize; j++) {
 				MapLocation loc = new MapLocation(i, j);
 				if ((loc.get(karboniteMap) || loc.get(fuelMap)) && loc.get(clusterId) == 0) {
-					currentCluster.clear();
+					inCluster[++numberOfClusters] = new LinkedList<>();
 					currentClusterMaxX = currentClusterMaxY = 0;
 					currentClusterMinX = currentClusterMinY = boardSize-1;
-					dfsAssignClusters(loc, ++numberOfClusters);
+					dfsAssignClusters(loc, numberOfClusters);
 
 					// Find the centroid
 					int bestCentroidValue = Integer.MAX_VALUE;
@@ -550,7 +550,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						for (int y = currentClusterMinY-1; y <= currentClusterMaxY+1; y++) {
 							loc = new MapLocation(x, y);
 							if (loc.isOnMap() && loc.get(map) == MAP_PASSABLE && !loc.get(karboniteMap) && !loc.get(fuelMap)) {
-								int centroidValue = findCentroidValue(loc);
+								int centroidValue = findCentroidValue(loc, numberOfClusters);
 								if (centroidValue < bestCentroidValue) {
 									bestCentroidValue = centroidValue;
 									clusterCentroid[numberOfClusters] = loc;
@@ -1781,9 +1781,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null &&
 				((myLoc.get(karboniteMap) && me.karbonite < SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
-				(myLoc.get(fuelMap) && me.fuel < SPECS.UNITS[me.unit].FUEL_CAPACITY))) {
+				(myLoc.get(fuelMap) && me.fuel < SPECS.UNITS[me.unit].FUEL_CAPACITY && (globalRound > KARB_RESERVE_TURN_THRESHOLD || !hasUnoccupiedKarbonite(myCluster))))) {
 
-				// TODO priotise karbonite in opening
 				myAction = mine();
 			}
 
@@ -1835,11 +1834,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 								return false;
 							}
 
-							// TODO prioritise karbonite in opening
 							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 								return true;
 							}
-							if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY) {
+							if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && (globalRound > KARB_RESERVE_TURN_THRESHOLD || !hasUnoccupiedKarbonite(myCluster))) {
 								return true;
 							}
 
@@ -1894,6 +1892,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			else if (round < 100) return 500;
 			else if (round < 150) return 1000;
 			else return 2000;
+		}
+
+		private boolean hasUnoccupiedKarbonite(int cluster) {
+			Iterator<MapLocation> iterator = inCluster[cluster].iterator();
+			while (iterator.hasNext()) {
+				MapLocation loc = iterator.next();
+				if (loc.get(karboniteMap) && loc.get(visibleRobotMap) <= 0) {
+					return true;
+				}
+			}
+			return false;
 		}
 	}
 
