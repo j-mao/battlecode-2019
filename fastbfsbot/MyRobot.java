@@ -1388,6 +1388,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			boolean saveKarboniteForChurch = false;
 			int[] friendlyUnits = new int[6];
+			int numPilgrimsUnknownCluster = 0;
 
 			for (int i = 1; i <= numberOfClusters; i++) {
 				numPilgrimsAtCluster[i] = 0;
@@ -1396,8 +1397,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (Robot r: visibleRobots) {
 				if (r.team == me.team) {
 					int what = communications.readCastle(r);
-					if (what == Communicator.NO_MESSAGE) {
+					if (r.id == me.id) {
+						friendlyUnits[SPECS.CASTLE]++;
+					} else if (what == Communicator.NO_MESSAGE) {
 						// It is a new robot, not much we can do
+						// Assume it is a pilgrim to prevent pilgrim spam
+						numPilgrimsUnknownCluster++;
 					} else if (what < LOCATION_SHARING_OFFSET) {
 						friendlyUnits[what]++;
 					} else if (what >= LOCATION_SHARING_OFFSET && what < CASTLE_SECRET_TALK_OFFSET) {
@@ -1412,6 +1417,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						friendlyUnits[SPECS.PILGRIM]++;
 						numPilgrimsAtCluster[what-CLUSTER_ASSIGNMENT_OFFSET]++;
 					} else if (what == PILGRIM_WANTS_A_CHURCH) {
+						numPilgrimsUnknownCluster++;
 						friendlyUnits[SPECS.PILGRIM]++;
 						if (me.turn >= ALLOW_CHURCHES_TURN_THRESHOLD) {
 							saveKarboniteForChurch = true;
@@ -1446,7 +1452,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			int pilgrimClusterAssignment = -1;
 			for (int i = 0; i < numberOfClusters; i++) {
-				if (numPilgrimsAtCluster[clusterVisitOrder[i]] < clusterSize[clusterVisitOrder[i]]) {
+				// Assume the worst case: the unknown pilgrims are right there.
+				if (numPilgrimsAtCluster[clusterVisitOrder[i]]+numPilgrimsUnknownCluster < clusterSize[clusterVisitOrder[i]]) {
 					// Only go to clusters on my half of the board
 					if (myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]]) <
 						myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]].opposite(symmetryStatus))) {
