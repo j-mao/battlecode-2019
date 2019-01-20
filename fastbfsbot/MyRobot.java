@@ -249,6 +249,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
+		MapLocation add(int dx, int dy) {
+			return new MapLocation(x+dx, y+dy);
+		}
+
+		/**
+		 * @deprecated If you're creating a new Direction object for this, use add(int, int) instead. Allocating new is slow.
+		 */
+		@Deprecated
 		MapLocation add(Direction dir) {
 			return new MapLocation(x+dir.getX(), y+dir.getY());
 		}
@@ -388,7 +396,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						// to being within its 'isDangerous' in one move, hence causing the weird back and forth behavour
 						for (int dx = -offset; dx <= offset; dx++) {
 							for (int dy = Math.abs(dx)-offset; dy <= offset-Math.abs(dx); dy++) {
-								MapLocation affected = target.add(new Direction(dx, dy));
+								MapLocation affected = target.add(dx, dy);
 								if (affected.isOnMap()) {
 									if (affected.get(map) == MAP_PASSABLE) {
 										affected.set(isDangerous, me.turn);
@@ -515,9 +523,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 		for (int i = -3; i <= 3; i++) {
 			for (int j = -3; j <= 3; j++) {
-				Direction dir = new Direction(i, j);
-				if (dir.getMagnitude() <= CLUSTER_DISTANCE) {
-					MapLocation newLoc = loc.add(dir);
+				if (i*i+j*j <= CLUSTER_DISTANCE) {
+					MapLocation newLoc = loc.add(i, j);
 					if (newLoc.isOnMap() && 
 					newLoc.get(clusterId) == 0 &&
 					(newLoc.get(karboniteMap) || newLoc.get(fuelMap))) {
@@ -540,18 +547,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private void noteResourceClusters() {
 		for (int i = 0; i < boardSize; i++) {
 			for (int j = 0; j < boardSize; j++) {
-				MapLocation loc = new MapLocation(i, j);
-				if ((loc.get(karboniteMap) || loc.get(fuelMap)) && loc.get(clusterId) == 0) {
+				if ((karboniteMap[j][i] || fuelMap[j][i]) && clusterId[j][i] == 0) {
 					inCluster[++numberOfClusters] = new LinkedList<>();
 					currentClusterMaxX = currentClusterMaxY = 0;
 					currentClusterMinX = currentClusterMinY = boardSize-1;
-					dfsAssignClusters(loc, numberOfClusters);
+					dfsAssignClusters(new MapLocation(i, j), numberOfClusters);
 
 					// Find the centroid
 					int bestCentroidValue = Integer.MAX_VALUE;
 					for (int x = currentClusterMinX-1; x <= currentClusterMaxX+1; x++) {
 						for (int y = currentClusterMinY-1; y <= currentClusterMaxY+1; y++) {
-							loc = new MapLocation(x, y);
+							MapLocation loc = new MapLocation(x, y);
 							if (loc.isOnMap() && loc.get(map) == MAP_PASSABLE && !loc.get(karboniteMap) && !loc.get(fuelMap)) {
 								int centroidValue = findCentroidValue(loc, numberOfClusters);
 								if (centroidValue < bestCentroidValue) {
@@ -692,7 +698,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		boolean useful = false;
 		int value = 0;
 		for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) {
-			MapLocation affected = target.add(new Direction(i, j));
+			MapLocation affected = target.add(i, j);
 			if (affected.isOnMap()) {
 				int visibleState = affected.get(visibleRobotMap);
 				if (visibleState != MAP_EMPTY) {
@@ -1254,20 +1260,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected MoveAction tryToGoSomewhereNotDangerous(int maxDispl, int maxSpeed) {
 			// TODO maybe return null if we're already safe?
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
-				Direction dir = new Direction(i, j);
-				if (dir.getMagnitude() <= maxSpeed) {
-					MapLocation location = myLoc.add(dir);
+				if (i*i+j*j <= maxSpeed) {
+					MapLocation location = myLoc.add(i, j);
 					if (location.isOccupiable() && location.get(isDangerous) != me.turn) {
-						return move(dir);
+						return move(i, j);
 					}
 				}
 			}
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
-				Direction dir = new Direction(i, j);
-				if (dir.getMagnitude() <= maxSpeed) {
-					MapLocation location = myLoc.add(dir);
+				if (i*i+j*j <= maxSpeed) {
+					MapLocation location = myLoc.add(i, j);
 					if (location.isOccupiable() && location.get(veryDangerous) != me.turn) {
-						return move(dir);
+						return move(i, j);
 					}
 				}
 			}
@@ -1282,16 +1286,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].ATTACK_RADIUS[1]));
 			MapLocation bestLoc = null;
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
-				Direction dir = new Direction(i, j);
-				if (dir.getMagnitude() >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
-					dir.getMagnitude() <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+				if (i*i+j*j >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
+					i*i+j*j <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
 
-					MapLocation location = myLoc.add(dir);
+					MapLocation location = myLoc.add(i, j);
 					// Game spec doesn't prohibit attacking impassable terrain anymore
 					if (location.isOnMap() /* && location.get(map) == MAP_PASSABLE */ ) {
 						int altValue = getAttackValue(location);
 						if (altValue > bestValue) {
-							myAction = attack(dir);
+							myAction = attack(i, j);
 							bestValue = altValue;
 							bestLoc = location;
 						}
@@ -1301,9 +1304,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (bestLoc != null && fuel >= SPECS.UNITS[me.unit].ATTACK_FUEL_COST) {
 				for (int i = -1; i <= 1; i++) {
 					for (int j = -1; j <= 1; j++) {
-						Direction dir = new Direction(i, j);
-						if (dir.getMagnitude() <= SPECS.UNITS[me.unit].DAMAGE_SPREAD) {
-							MapLocation location = bestLoc.add(dir);
+						if (i*i+j*j <= SPECS.UNITS[me.unit].DAMAGE_SPREAD) {
+							MapLocation location = bestLoc.add(i, j);
 							if (location.isOnMap()) {
 								location.set(damageDoneToSquare, location.get(damageDoneToSquare) + SPECS.UNITS[me.unit].ATTACK_DAMAGE);
 							}
@@ -2117,9 +2119,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// Go as close as possible
 					MapLocation bestLoc = null;
 					for (int i = -3; i <= 3; i++) for (int j = -3; j <= 3; j++) {
-						Direction dir = new Direction(i, j);
-						if (dir.getMagnitude() <= SPECS.UNITS[me.unit].SPEED) {
-							MapLocation location = myLoc.add(dir);
+						if (i*i+j*j <= SPECS.UNITS[me.unit].SPEED) {
+							MapLocation location = myLoc.add(i, j);
 							if (location.isOccupiable() &&
 								(bestLoc == null || where.distanceSquaredTo(location) < where.distanceSquaredTo(bestLoc))) {
 
@@ -2200,9 +2201,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int bestValue = Integer.MAX_VALUE;
 			int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
-				Direction dir = new Direction(i, j);
-				if (dir.getMagnitude() <= SPECS.UNITS[me.unit].VISION_RADIUS) {
-					MapLocation location = myLoc.add(dir);
+				if (i*i+j*j <= SPECS.UNITS[me.unit].VISION_RADIUS) {
+					MapLocation location = myLoc.add(i, j);
 					if (location.isOccupiable() && isGoodTurtlingLocation(location)) {
 						bestValue = Math.min(bestValue, calculateTurtleMetric(location));
 					}
@@ -2250,8 +2250,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						boolean anyGoodLocations = false;
 						for (int i = -maxDispl; i <= maxDispl; ++i) {
 							for (int j = -maxDispl; j <= maxDispl; ++j) {
-								Direction dir = new Direction(i, j);
-								MapLocation loc = myHome.add(dir);
+								MapLocation loc = myHome.add(i, j);
 								if (isGoodBodyguardLocation(loc)) {
 									anyGoodLocations = true;
 									break;
