@@ -2356,15 +2356,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (symmetryStatus == BoardSymmetryType.HOR_SYMMETRICAL) {
 				if (myHome.getY() < boardSize/2) {
-					location = new MapLocation(location.getX(), location.getY()-IDLING_OFFSET_CONSTANT);
-				} else {
 					location = new MapLocation(location.getX(), location.getY()+IDLING_OFFSET_CONSTANT);
+				} else {
+					location = new MapLocation(location.getX(), location.getY()-IDLING_OFFSET_CONSTANT);
 				}
 			} else if (symmetryStatus == BoardSymmetryType.VER_SYMMETRICAL) {
 				if (myHome.getX() < boardSize/2) {
-					location = new MapLocation(location.getX()-IDLING_OFFSET_CONSTANT, location.getY());
-				} else {
 					location = new MapLocation(location.getX()+IDLING_OFFSET_CONSTANT, location.getY());
+				} else {
+					location = new MapLocation(location.getX()-IDLING_OFFSET_CONSTANT, location.getY());
 				}
 			}
 
