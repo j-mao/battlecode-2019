@@ -1320,6 +1320,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int[] clusterVisitOrder;
 		private int[] numPilgrimsAtCluster;
+		private boolean[] clusterBelongsToMe;
 
 		private boolean isFirstCastle;
 		private boolean[] isCastle;
@@ -1345,6 +1346,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			clusterVisitOrder = new int[numberOfClusters+1];
 			numPilgrimsAtCluster = new int[numberOfClusters+1];
+			clusterBelongsToMe = new boolean[numberOfClusters+1];
 
 			isCastle = new boolean[SPECS.MAX_ID+1];
 
@@ -1406,7 +1408,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					} else if (what == Communicator.NO_MESSAGE) {
 						// It is a new robot, not much we can do
 						// Assume it is a pilgrim to prevent pilgrim spam
-						numPilgrimsUnknownCluster++;
+						if (me.turn > 1) {
+							numPilgrimsUnknownCluster++;
+						}
 					} else if (what < LOCATION_SHARING_OFFSET) {
 						friendlyUnits[what]++;
 					} else if (what >= LOCATION_SHARING_OFFSET && what < CASTLE_SECRET_TALK_OFFSET) {
@@ -1440,6 +1444,26 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			readStructureLocations();
 			MapLocation imminentAttack = senseImminentAttack();
 
+			// Double check cluster owners
+			// We run this every round in case a castle dies
+			for (int i = 1; i <= numberOfClusters; i++) {
+				clusterBelongsToMe[i] = true;
+			}
+			if (me.turn >= 3) {
+				for (Integer castle: structureLocations.keySet()) {
+					if (isCastle[castle] && castle != me.id) {
+						for (int i = 1; i <= numberOfClusters; i++) {
+							int theirDist = structureLocations.get(castle).distanceSquaredTo(clusterCentroid[i]);
+							if (theirDist < myLoc.distanceSquaredTo(clusterCentroid[i])) {
+								clusterBelongsToMe[i] = false;
+							} else if (theirDist == myLoc.distanceSquaredTo(clusterCentroid[i]) && castle < me.id) {
+								clusterBelongsToMe[i] = false;
+							}
+						}
+					}
+				}
+			}
+
 			int distressBroadcastDistance = 0;
 			if (imminentAttack == null) {
 				if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
@@ -1459,14 +1483,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			int pilgrimClusterAssignment = -1;
 			for (int i = 0; i < numberOfClusters; i++) {
-				// Assume the worst case: the unknown pilgrims are right there.
-				if (numPilgrimsAtCluster[clusterVisitOrder[i]]+numPilgrimsUnknownCluster < clusterSize[clusterVisitOrder[i]]) {
-					// Only go to clusters on my half of the board
-					if (myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]]) <
-						myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]].opposite(symmetryStatus))) {
+				// Only go to clusters that don't have a closer castle to them
+				if (clusterBelongsToMe[clusterVisitOrder[i]]) {
+					// Assume the worst case: the unknown pilgrims are right there.
+					if (numPilgrimsAtCluster[clusterVisitOrder[i]]+numPilgrimsUnknownCluster < clusterSize[clusterVisitOrder[i]]) {
+						// Only go to clusters on my half of the board
+						if (myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]]) <
+							myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]].opposite(symmetryStatus))) {
 
-						pilgrimClusterAssignment = clusterVisitOrder[i];
-						break;
+							pilgrimClusterAssignment = clusterVisitOrder[i];
+							break;
+						}
 					}
 				}
 			}
