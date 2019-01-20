@@ -110,7 +110,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			inCluster = new LinkedList[MAX_NUMBER_CLUSTERS];
 
 			rng = new SimpleRandom();
-			communications = new EncryptedCommunicator();
+			communications = new PlaintextCommunicator();
 			myBfsSolver = new BfsSolver();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
@@ -1464,13 +1464,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					toBuild = SPECS.PILGRIM;
 				} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
 					karbonite > prevKarbonite &&
-					friendlyUnits[SPECS.PILGRIM] < (numKarbonite+numFuel+1)/2) {
-					// TODO change this condition to involve cluster assignment
+					pilgrimClusterAssignment != -1) {
 
 					toBuild = SPECS.PILGRIM;
 				} else if (me.turn >= KARB_RESERVE_TURN_THRESHOLD) {
-					if (friendlyUnits[SPECS.PILGRIM] < (numKarbonite+numFuel+1)/2) {
-						// TODO change this condition to involve cluster assignment
+					if (pilgrimClusterAssignment != -1) {
 						toBuild = SPECS.PILGRIM;
 					} else {
 						/*if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
@@ -1836,8 +1834,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					attackEnded) {
 
 					int resourcesRemaining = clusterSize[myCluster];
-					// TODO if the cluster is under attack the bfs may not visit it, and we still bfs everything
-					// fix this by doing something more intelligent
+					for (MapLocation location: inCluster[myCluster]) {
+						if (!thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
+							resourcesRemaining--;
+						}
+					}
 
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
@@ -1882,10 +1883,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							return location.get(visibleRobotMap) > 0 && !location.equals(myLoc);
 						},
 						(location)->{
+							if (!thresholdOk(location.get(isDangerous), DANGER_THRESHOLD)) {
+								return false;
+							}
 							if ((location.get(karboniteMap) || location.get(fuelMap)) && location.get(clusterId) == myCluster) {
 								resourcesRemaining--;
 							}
-							return location.isOccupiable() && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD);
+							return location.isOccupiable();
 						});
 					bestDir = myBfsSolver.nextStep();
 				}
