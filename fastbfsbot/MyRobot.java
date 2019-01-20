@@ -108,7 +108,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			clusterSize = new int[MAX_NUMBER_CLUSTERS];
 
 			rng = new SimpleRandom();
-			communications = new PlaintextCommunicator();
+			communications = new EncryptedCommunicator();
 			myBfsSolver = new BfsSolver();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
@@ -479,13 +479,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private void determineSymmetricOrientation() {
 		boolean isHor = isSymmetrical(BoardSymmetryType.HOR_SYMMETRICAL);
-		
+
 		if (isHor) {
 			symmetryStatus = BoardSymmetryType.HOR_SYMMETRICAL;
 		} else {
 			symmetryStatus = BoardSymmetryType.VER_SYMMETRICAL;
 		}
-		
 	}
 
 	//////// Resource cluster solving library ////////
@@ -1968,7 +1967,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					int closestDis = smallestTurtleDistanceToCastle();
 					if (closestDis != Integer.MAX_VALUE) {
 						myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
-							(location)->{ return isGoodTurtlingLocation(location) && location.distanceSquaredTo(myHome) == closestDis; },
+							(location)->{ return isGoodTurtlingLocation(location) && calculateTurtleMetric(location) == closestDis; },
 							(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
 							(location)->{ return location.isOccupiable() && location.get(visibleRobotMap) != MAP_INVISIBLE; });
 						bestDir = myBfsSolver.nextStep();
@@ -1990,8 +1989,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					bestDir = dirs[rng.nextInt() % 8];
 				}
 
-				MapLocation newLoc = myLoc.add(bestDir);
-				if (newLoc.isOccupiable()) {
+				if (myLoc.add(bestDir).isOccupiable()) {
 					myAction = move(bestDir);
 				}
 			}
@@ -2010,6 +2008,21 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return (myHome.getX() + myHome.getY() + location.getX() + location.getY()) % 2 == 0;
 		}
 
+		private int calculateTurtleMetric(MapLocation location) {
+			// Idea: we want to be close to our castle, but also be organised based on distance to enemy
+			// Just some random functions and constants I came up with, see how it goes
+
+			double homeDistancePenalty = Math.sqrt(myHome.distanceSquaredTo(location));
+			homeDistancePenalty /= 4;
+			double enemyDifferencePenalty = Math.abs(Math.sqrt(myHome.opposite(symmetryStatus).distanceSquaredTo(location)) - Math.sqrt(myHome.opposite(symmetryStatus).distanceSquaredTo(myHome)));
+			double enemyDistancePenalty = Math.sqrt(myHome.opposite(symmetryStatus).distanceSquaredTo(location));
+			enemyDistancePenalty /= 8;
+
+			// Multiply by some big number to preserve precision
+			double value = homeDistancePenalty + enemyDifferencePenalty + enemyDistancePenalty;
+			return ((int) (value*1000));
+		}
+
 		private int smallestTurtleDistanceToCastle() {
 			// What is the distance from our castle to the closest turtle location we can see
 			int bestValue = Integer.MAX_VALUE;
@@ -2019,7 +2032,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (dir.getMagnitude() <= SPECS.UNITS[me.unit].VISION_RADIUS) {
 					MapLocation location = myLoc.add(dir);
 					if (location.isOccupiable() && isGoodTurtlingLocation(location)) {
-						bestValue = Math.min(bestValue, location.distanceSquaredTo(myHome));
+						bestValue = Math.min(bestValue, calculateTurtleMetric(location));
 					}
 				}
 			}
