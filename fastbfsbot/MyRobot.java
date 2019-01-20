@@ -1318,9 +1318,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int prophetsCreated;
 		private int preachersCreated;
 
-		private static final int MIN_CRUSADERS_FOR_SWARM = 20;
-		private static final int MIN_PROPHETS_FOR_SWARM = 50; // Note that only a proportion of these will be sent
-		private static final int MIN_PREACHERS_FOR_SWARM = 15;
+		private static final int MIN_CRUSADERS_FOR_SWARM = 16;
+		private static final int MIN_PROPHETS_FOR_SWARM = 40; // Note that only a proportion of these will be sent
+		private static final int MIN_PREACHERS_FOR_SWARM = 12;
 		private static final int TURNS_BETWEEN_CONSECUTIVE_SWARMS = 100;
 		private static final double PROPORTION_OF_PROPHETS_TO_SEND_IN_SWARM = 0.6;
 		private int lastSwarm;
@@ -1616,7 +1616,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						nearbyFriendlyAttackers++;
 					}
 				}
-				if (nearbyFriendlyAttackers >= MIN_PROPHETS_FOR_SWARM) {
+				if (nearbyFriendlyAttackers >= MIN_PROPHETS_FOR_SWARM &&
+					friendlyUnits[SPECS.CRUSADER] >= MIN_CRUSADERS_FOR_SWARM &&
+					friendlyUnits[SPECS.PREACHER] >= MIN_PREACHERS_FOR_SWARM) {
+
 					log("Beginning swarm");
 					lastSwarm = me.turn;
 					currentSwarmLocation = attackTargetList.poll();
