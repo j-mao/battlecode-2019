@@ -2034,6 +2034,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class TurtlingProphetController extends MobileRobotController {
 
 		private MapLocation possibleAttackLocation = null;
+
 		TurtlingProphetController() {
 			super();
 		}
@@ -2261,6 +2262,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class IdlingAttackerController extends MobileRobotController {
 
+		private MapLocation possibleAttackLocation = null;
+
 		IdlingAttackerController() {
 			super();
 		}
@@ -2272,15 +2275,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
-			// TODO: Check for attack broadcast, and upgrade to AttackerController
-			// This includes:
-			// - swarm attacks (via ATTACK_ID_MASK and ATTACK_LOCATION_MASK)
-			// - distress attacks (via LONG_DISTANCE_MASK)
+			// Check for assignment from castle
+			if (isSquadUnitType(me.unit)) {
+				for (Robot r: visibleRobots) {
+					if (communications.isRadioing(r)) {
+						int what = communications.readRadio(r);
+						if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
+							mySpecificRobotController = new AttackerController(new MapLocation(what&0xfff), myHome);
+							return mySpecificRobotController.runSpecificTurn();
+						} else if ((what >> 12) == (ATTACK_LOCATION_MASK >> 12) && r.x == myHome.getX() && r.y == myHome.getY()) {
+							possibleAttackLocation = new MapLocation(what&0xfff);
+						} else if (possibleAttackLocation != null && (what >> 12) == (ATTACK_ID_MASK >> 12) && r.x == myHome.getX() && r.y == myHome.getY()) {
+							if ((what&0xfff) <= me.id) {
+								mySpecificRobotController = new AttackerController(possibleAttackLocation, myHome);
+								return mySpecificRobotController.runTurn();
+							}
+						}
+					}
+				}
+			}
 
 			Action myAction = tryToAttack();
 
 			if (myAction == null) {
-				// TODO: walk towards an agreed location
+				Direction dir = dirs[rng.nextInt()%8];
+				myAction = move(dir.getX(), dir.getY());
 			}
 
 			return myAction;
