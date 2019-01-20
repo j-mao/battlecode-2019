@@ -112,7 +112,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			inCluster = new LinkedList[MAX_NUMBER_CLUSTERS];
 
 			rng = new SimpleRandom();
-			communications = new PlaintextCommunicator();
+			communications = new EncryptedCommunicator();
 			myBfsSolver = new BfsSolver();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
