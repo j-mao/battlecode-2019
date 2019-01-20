@@ -62,6 +62,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Instant messaging: radio
 	private static final int WORKER_SEND_MASK = 0x6000;
+	private static final int BODYGUARD_SEND_MASK = 0x7000;
 	private static final int LONG_DISTANCE_MASK = 0xa000;
 	private static final int ATTACK_ID_MASK = 0xb000;
 	private static final int ATTACK_LOCATION_MASK = 0xc000;
@@ -1321,6 +1322,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int[] clusterVisitOrder;
 		private int[] numPilgrimsAtCluster;
 		private boolean[] clusterBelongsToMe;
+		private boolean[] clusterIsDefended;
 
 		private boolean isFirstCastle;
 		private boolean[] isCastle;
@@ -1347,6 +1349,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			clusterVisitOrder = new int[numberOfClusters+1];
 			numPilgrimsAtCluster = new int[numberOfClusters+1];
 			clusterBelongsToMe = new boolean[numberOfClusters+1];
+			clusterIsDefended = new boolean[numberOfClusters+1];
 
 			isCastle = new boolean[SPECS.MAX_ID+1];
 
@@ -1499,6 +1502,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			int toBuild = -1;
+			boolean isBodyguard = false;
 			if (crusadersCreated < enemyCrusaders+enemyPeacefulRobots) {
 				// Fight against enemy non-aggressors with crusaders cos these things are cheap
 				toBuild = SPECS.CRUSADER;
@@ -1517,10 +1521,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					karbonite > prevKarbonite &&
 					pilgrimClusterAssignment != -1) {
 
-					toBuild = SPECS.PILGRIM;
+					if (clusterIsDefended[pilgrimClusterAssignment] || pilgrimClusterAssignment == clusterVisitOrder[0]) {
+						toBuild = SPECS.PILGRIM;
+					} else {
+						toBuild = SPECS.PROPHET;
+						isBodyguard = true;
+					}
 				} else if (me.turn >= KARB_RESERVE_TURN_THRESHOLD) {
 					if (pilgrimClusterAssignment != -1) {
-						toBuild = SPECS.PILGRIM;
+						if (clusterIsDefended[pilgrimClusterAssignment] || pilgrimClusterAssignment == clusterVisitOrder[0]) {
+							toBuild = SPECS.PILGRIM;
+						} else {
+							toBuild = SPECS.PROPHET;
+							isBodyguard = true;
+						}
 					} else {
 						/*if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
 							friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
@@ -1531,6 +1545,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						/*} else {
 							toBuild = SPECS.CRUSADER;
 						}*/
+
 						if ((saveKarboniteForChurch &&
 							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
 							(me.turn > 250 && fuel < FUEL_FOR_SWARM)) {
@@ -1585,6 +1600,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							communications.sendRadio(pilgrimClusterAssignment|WORKER_SEND_MASK, 2);
 							// We shouldn't be in distress if we're a pilgrim, but just in case:
 							distressBroadcastDistance = -1;
+						} else if (isBodyguard) {
+							// Tell it the cluster
+							communications.sendRadio(pilgrimClusterAssignment|BODYGUARD_SEND_MASK, 2);
+							clusterIsDefended[pilgrimClusterAssignment] = true;
 						} else if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
 							// Broadcast distress to new unit if required
 							distressBroadcastDistance = Math.max(distressBroadcastDistance, 2);
@@ -2055,7 +2074,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				for (Robot r: visibleRobots) {
 					if (communications.isRadioing(r)) {
 						int what = communications.readRadio(r);
-						if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
+						if ((what >> 12) == (BODYGUARD_SEND_MASK >> 12)) {
+							mySpecificRobotController = new BodyguardController(what&0xfff);
+							return mySpecificRobotController.runSpecificTurn();
+						} else if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
 							mySpecificRobotController = new AttackerController(new MapLocation(what&0xfff), myHome);
 							return mySpecificRobotController.runSpecificTurn();
 						} else if ((what >> 12) == (ATTACK_LOCATION_MASK >> 12) && r.x == myHome.getX() && r.y == myHome.getY()) {
@@ -2187,6 +2209,82 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
+	private class BodyguardController extends MobileRobotController {
+
+		private int myCluster;
+		private int goodBodyguardDistance;
+
+		BodyguardController(int cluster) {
+			// Our 'home' is the centre of our cluster
+			super(clusterCentroid[cluster]);
+			myCluster = cluster;
+
+			goodBodyguardDistance = 2;
+		}
+
+		@Override
+		Action runSpecificTurn() {
+
+			Action myAction = tryToAttack();
+
+			// Bodyguards do not currently keep track of
+			// which squares are occupied internally; they
+			// only know what they can see.
+			// This should be fine for now.
+
+			if (myAction == null && !isGoodBodyguardLocation(myLoc)) {
+				Direction bestDir = myBfsSolver.nextStep();
+
+				while (bestDir == null || !myLoc.add(bestDir).isOccupiable()) {
+					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
+						(location) -> { return isGoodBodyguardLocation(location); },
+						(location) -> { return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+						(location) -> { return location.isOccupiable(); });
+					bestDir = myBfsSolver.nextStep();
+
+					if (bestDir == null) {
+						int maxDispl = (int)Math.ceil(Math.sqrt(goodBodyguardDistance));
+						boolean anyGoodLocations = false;
+						for (int i = -maxDispl; i <= maxDispl; ++i) {
+							for (int j = -maxDispl; j <= maxDispl; ++j) {
+								Direction dir = new Direction(i, j);
+								MapLocation loc = myHome.add(dir);
+								if (isGoodBodyguardLocation(loc)) {
+									anyGoodLocations = true;
+									break;
+								}
+							}
+						}
+
+						if (!anyGoodLocations) {
+							// multiply radius by sqrt(2) in hopes there's a good
+							// square yet to be found
+							goodBodyguardDistance *= 2;
+						} else {
+							// give up
+							break;
+						}
+					}
+				}
+
+				if (bestDir != null) {
+					MapLocation newLoc = myLoc.add(bestDir);
+					if (newLoc.isOccupiable()) {
+						myAction = move(bestDir);
+					}
+				}
+			}
+
+			return myAction;
+		}
+
+		boolean isGoodBodyguardLocation(MapLocation loc) {
+			return (loc.isOccupiable() || loc.equals(myLoc)) &&
+				   loc.distanceSquaredTo(myHome) <= goodBodyguardDistance &&
+				   !(loc.get(karboniteMap) || loc.get(fuelMap) || loc.equals(myHome));
+		}
+	}
+
 	private class AttackerController extends MobileRobotController {
 
 		private MapLocation myTarget;
@@ -2231,7 +2329,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (bestDir == null || !myLoc.add(bestDir).isOccupiable() || me.turn == 2) {
 					myBfsSolver.solve(myLoc, (onlyDefendingUnit && me.turn == 1) ? 2 : SPECS.UNITS[me.unit].SPEED,
 						(location)->{
-							return !(visibleRobotMap[location.getY()][location.getX()] > 0 && !location.equals(myLoc)) &&
+							return !(location.get(visibleRobotMap) > 0 && !location.equals(myLoc)) &&
 								location.distanceSquaredTo(myTarget) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
 								location.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1];
 						},
