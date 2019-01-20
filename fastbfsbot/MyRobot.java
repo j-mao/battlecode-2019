@@ -63,6 +63,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Instant messaging: radio
 	private static final int WORKER_SEND_MASK = 0x6000;
 	private static final int LONG_DISTANCE_MASK = 0xa000;
+	private static final int ATTACK_ID_MASK = 0xb000;
+	private static final int ATTACK_LOCATION_MASK = 0xc000;
 	private static final int END_ATTACK = 0xffff;
 
 	// Instant messaging: castle talk
@@ -638,7 +640,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private boolean isSquadUnitType(int unitType) {
-		return unitType == SPECS.CRUSADER || unitType == SPECS.PREACHER;
+		return unitType == SPECS.CRUSADER || unitType == SPECS.PREACHER || unitType == SPECS.PROPHET;
 	}
 
 	private boolean thresholdOk(int value, int threshold) {
@@ -1322,12 +1324,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int prophetsCreated;
 		private int preachersCreated;
 
-		private static final int SWARM_THRESHOLD = 10;
+		private static final int SWARM_THRESHOLD = 50;
+		private static final int GAP_BETWEEN_SWARM_THRESHOLD = 100;
+		private static final double PROPORTION_TO_SEND_IN_SWARM = 0.6;
+		private int lastSwarm;
+		private MapLocation currentSwarmLocation; 
 
 		// Radio of units, assumes crusader <= preacher <= prophet
 		private static final int CRUSADER_TO_PREACHER = 100;
 		private static final int PREACHER_TO_PROPHET = 2;
-		private static final int TURTLE_FUEL_THRESHOLD = 2000; // Fuel we require post round 200 to build turtle units
 
 		CastleController() {
 			super();
@@ -1342,6 +1347,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			crusadersCreated = 0;
 			prophetsCreated = 0;
 			preachersCreated = 0;
+			lastSwarm = 0;
+			currentSwarmLocation = null;
 		}
 
 		@Override
@@ -1409,6 +1416,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (me.turn >= ALLOW_CHURCHES_TURN_THRESHOLD) {
 							saveKarboniteForChurch = true;
 						}
+					}
+					if (isRadioing(r) && (communications.readRadio(r) >> 12) == (ATTACK_LOCATION_MASK >> 12) && r.id != me.id) {
+						lastSwarm = r.turn;
 					}
 				}
 			}
@@ -1482,7 +1492,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						}*/
 						if ((saveKarboniteForChurch &&
 							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
-							(me.turn > 250 && fuel < TURTLE_FUEL_THRESHOLD)) {
+							(me.turn > 250 && fuel < FUEL_FOR_SWARM)) {
 
 							toBuild = -1;
 						}
@@ -1554,7 +1564,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (distressBroadcastDistance > 0) {
 				communications.sendRadio(imminentAttack.hashCode()|LONG_DISTANCE_MASK, distressBroadcastDistance);
-			} else if (fuel >= FUEL_FOR_SWARM) {
+			} else if (currentSwarmLocation != null) {
+				// Tell our units to go here
+				int unitsToSend = minimumIdToAttackWith();
+				log("Sending ids to swarm " + unitsToSend + " with id " + unitsToSend);
+				communications.sendRadio(unitsToSend|ATTACK_ID_MASK, getReasonableBroadcastDistance(false));
+				currentSwarmLocation = null;
+			} else if (fuel >= FUEL_FOR_SWARM && thresholdOk(lastSwarm, GAP_BETWEEN_SWARM_THRESHOLD)) {
 				// Maybe we are in a good position... attack?
 
 				int nearbyFriendlyAttackers = 0;
@@ -1564,9 +1580,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 				if (nearbyFriendlyAttackers >= SWARM_THRESHOLD) {
-					MapLocation where = attackTargetList.poll();
-					communications.sendRadio(where.hashCode()|LONG_DISTANCE_MASK, getReasonableBroadcastDistance(false));
-					attackTargetList.add(where);
+					log("Beginning swarm");
+					lastSwarm = me.turn;
+					currentSwarmLocation = attackTargetList.poll();
+					communications.sendRadio(currentSwarmLocation.hashCode()|ATTACK_LOCATION_MASK, boardSize*boardSize);
+						
+					attackTargetList.add(currentSwarmLocation);
 				}
 			}
 			return myAction;
@@ -1634,6 +1653,40 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
+		}
+
+		// During attacks, we will send all units with id >= some value. This finds that value
+		private int minimumIdToAttackWith() {
+			LinkedList<Integer> turtlingUnits = new LinkedList<>();
+			for (Robot r : visibleRobots) {
+				if (isVisible(r) && r.team == me.team && isSquadUnitType(r.unit)) {
+					turtlingUnits.add(r.id);
+				}
+			}
+			int numTurtling = numWithIdAtLeast(turtlingUnits, 0);
+			// Binary search for PROPORTION_TO_SEND_IN_SWARM
+			int s = 1;
+			int e = SPECS.MAX_ID;
+			while (s != e) {
+				int m = (int)Math.floor((s+e)/2);
+				int num = numWithIdAtLeast(turtlingUnits, m);
+				if (num > (int)(PROPORTION_TO_SEND_IN_SWARM*(double)numTurtling)) {
+					s = m+1;
+				} else {
+					e = m;
+				}
+			}
+			return s;
+		}
+		private int numWithIdAtLeast(LinkedList<Integer> turtlingUnits, int id) {
+			int count = 0;
+			Iterator<Integer> iterator = turtlingUnits.iterator();
+			while (iterator.hasNext()) {
+				if (iterator.next() >= id) {
+					count++;
+				}
+			}
+			return count;
 		}
 	}
 
@@ -1944,6 +1997,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class DefenderController extends MobileRobotController {
 
+		private MapLocation possibleAttackLocation = null;
 		DefenderController() {
 			super();
 		}
@@ -1963,6 +2017,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
 							mySpecificRobotController = new AttackerController(new MapLocation(what&0xfff), myHome);
 							return mySpecificRobotController.runSpecificTurn();
+						} else if ((what >> 12) == (ATTACK_LOCATION_MASK >> 12) && r.x == myHome.getX() && r.y == myHome.getY()) {
+							possibleAttackLocation = new MapLocation(what&0xfff);
+						} else if (possibleAttackLocation != null && (what >> 12) == (ATTACK_ID_MASK >> 12) && r.x == myHome.getX() && r.y == myHome.getY()) {
+							if ((what&0xfff) <= me.id) {
+								mySpecificRobotController = new AttackerController(possibleAttackLocation, myHome);
+								return mySpecificRobotController.runTurn();
+							}
 						}
 					}
 				}
@@ -2101,6 +2162,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// TODO maybe go closer before downgrading to defence
 			// TODO broadcast attack success
+
 			if (myAction == null &&
 				myTarget.equals(myHome) &&
 				myLoc.distanceSquaredTo(myTarget) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
