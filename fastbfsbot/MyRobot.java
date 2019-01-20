@@ -33,7 +33,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private int numFuel;
 
 	// Game staging constants
-	private static final int KARB_RESERVE_TURN_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
+	private static final int KARB_RESERVE = 60; // how much karbonite to ensure we have at all times.
 	private static final int ALLOW_CHURCHES_TURN_THRESHOLD = 50; // When we start to allow pilgrims to build churches
 	private static final int FUEL_FOR_SWARM = 3000; // Min fuel before we allow a swarm
 
@@ -1239,7 +1239,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					int unit = location.get(visibleRobotMap);
 					if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
 						Robot robot = getRobot(unit);
-						if (robot.team == me.team) {
+						if (robot.team == me.team && (isStructure(robot.unit) || robot.unit == SPECS.PILGRIM)) {
 							myAction = give(dirs[dir], me.karbonite, me.fuel);
 							if (isStructure(robot.unit)) {
 								break;
@@ -1508,13 +1508,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			int toBuild = -1;
 			boolean isBodyguard = false;
+			boolean buildUrgently = false; // disregard karb reserve? or not?
 			if (crusadersCreated < enemyCrusaders+enemyPeacefulRobots) {
 				// Fight against enemy non-aggressors with crusaders cos these things are cheap
 				toBuild = SPECS.CRUSADER;
+				buildUrgently = true;
 			} else if (prophetsCreated < enemyProphets) {
 				toBuild = SPECS.PROPHET;
+				buildUrgently = true;
 			} else if (preachersCreated < enemyPreachers+enemyCastles*3) {
 				toBuild = SPECS.PREACHER;
+				buildUrgently = true;
 			} else if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
 				myAction = tryToAttack();
 			}
@@ -1522,17 +1526,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (toBuild == -1 && myAction == null) {
 				if (karbonite >= SPECS.INITIAL_KARBONITE - SPECS.UNITS[SPECS.PILGRIM].CONSTRUCTION_KARBONITE && me.turn == 1) {
 					toBuild = SPECS.PILGRIM;
-				} else if (me.turn < KARB_RESERVE_TURN_THRESHOLD &&
-					karbonite > prevKarbonite &&
-					pilgrimClusterAssignment != -1) {
-
-					if (clusterIsDefended[pilgrimClusterAssignment] || pilgrimClusterAssignment == clusterVisitOrder[0]) {
-						toBuild = SPECS.PILGRIM;
-					} else {
-						toBuild = SPECS.PROPHET;
-						isBodyguard = true;
-					}
-				} else if (me.turn >= KARB_RESERVE_TURN_THRESHOLD) {
+				} else {
 					if (pilgrimClusterAssignment != -1) {
 						if (clusterIsDefended[pilgrimClusterAssignment] || pilgrimClusterAssignment == clusterVisitOrder[0]) {
 							toBuild = SPECS.PILGRIM;
@@ -1550,7 +1544,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						}
 
 						if ((saveKarboniteForChurch &&
-							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
+							karbonite - KARB_RESERVE < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
 							(me.turn > 250 && fuel < FUEL_FOR_SWARM)) {
 
 							toBuild = -1;
@@ -1560,7 +1554,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (toBuild != -1 &&
-				karbonite >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
+				karbonite - (buildUrgently ? 0 : KARB_RESERVE) >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
 				fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
 
 				boolean isAllowedToBuild = true;
@@ -1861,9 +1855,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			noteDangerousCells();
 
-			// Note occupied cells
-			boolean redoBfs = false;
-
 			// Check if there is a new home closer to us
 			// or if we should note that an attack has ended
 			boolean attackEnded = false;
@@ -1927,7 +1918,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null &&
 				((myLoc.get(karboniteMap) && me.karbonite < SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
-				(myLoc.get(fuelMap) && me.fuel < SPECS.UNITS[me.unit].FUEL_CAPACITY && (globalRound > KARB_RESERVE_TURN_THRESHOLD || !hasUnoccupiedKarbonite(myCluster))))) {
+				(myLoc.get(fuelMap) && me.fuel < SPECS.UNITS[me.unit].FUEL_CAPACITY && (karbonite >= KARB_RESERVE || !hasUnoccupiedKarbonite(myCluster))))) {
 
 				myAction = mine();
 			}
@@ -1935,7 +1926,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null &&
 				!churchIsBuilt &&
 				(myLoc.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
-				karbonite >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
+				karbonite - KARB_RESERVE >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
 				fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
 
 				myAction = buildUnit(SPECS.CHURCH, myLoc.directionTo(clusterCentroid[myCluster]));
@@ -1944,7 +1935,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				Direction bestDir = myBfsSolver.nextStep();
 				if (bestDir == null ||
-					redoBfs ||
 					!myLoc.add(bestDir).isOccupiable() ||
 					myLoc.add(bestDir).get(isDangerous) == me.turn ||
 					attackEnded) {
@@ -1973,7 +1963,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							// We could build a church that would be nice
 							if (!churchIsBuilt &&
 								(location.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
-								karbonite >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
+								karbonite - KARB_RESERVE >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
 								fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
 
 								return true;
@@ -1986,7 +1976,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 								return true;
 							}
-							if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && (globalRound > KARB_RESERVE_TURN_THRESHOLD || !hasUnoccupiedKarbonite(myCluster))) {
+							if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && (karbonite >= KARB_RESERVE || !hasUnoccupiedKarbonite(myCluster))) {
 								return true;
 							}
 
@@ -2363,15 +2353,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		boolean amOnlyDefendingUnit() {
-			if (globalRound < KARB_RESERVE_TURN_THRESHOLD) {
-				for (Robot r : visibleRobots) {
-					if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.unit != SPECS.CASTLE && r.id != me.id) {
-						return false;
-					}
+			for (Robot r : visibleRobots) {
+				if (isVisible(r) && r.team == me.team && isAggressiveRobot(r.unit) && r.unit != SPECS.CASTLE && r.id != me.id) {
+					return false;
 				}
-				return true;
 			}
-			return false;
+			return true;
 		}
 	}
 }
