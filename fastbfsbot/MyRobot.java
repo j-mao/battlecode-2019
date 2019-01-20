@@ -1388,10 +1388,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				numPilgrimsAtCluster[i] = 0;
 			}
 
+			int visibleFriendlyCrusaders = 0;
 			int visibleFriendlyProphets = 0;
+			int visibleFriendlyPreachers = 0;
 			for (Robot r: visibleRobots) {
-				if (isVisible(r) && r.team == me.team && r.unit == SPECS.PROPHET) {
-					visibleFriendlyProphets++;
+				if (isVisible(r) && r.team == me.team) {
+					if (r.unit == SPECS.CRUSADER) {
+						visibleFriendlyCrusaders++;
+					} else if (r.unit == SPECS.PROPHET) {
+						visibleFriendlyProphets++;
+					} else if (r.unit == SPECS.PREACHER) {
+						visibleFriendlyPreachers++;
+					}
 				}
 			}
 
@@ -1519,9 +1527,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else {
 				if (visibleFriendlyProphets < MIN_PROPHETS_FOR_SWARM) {
 					toBuild = SPECS.PROPHET;
-				} else if (friendlyUnits[SPECS.PREACHER] < MIN_PREACHERS_FOR_SWARM) {
+				} else if (visibleFriendlyPreachers < MIN_PREACHERS_FOR_SWARM) {
 					toBuild = SPECS.PREACHER;
-				} else if (friendlyUnits[SPECS.CRUSADER] < MIN_CRUSADERS_FOR_SWARM) {
+				} else if (visibleFriendlyCrusaders < MIN_CRUSADERS_FOR_SWARM) {
 					toBuild = SPECS.CRUSADER;
 				}
 
@@ -1616,9 +1624,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						nearbyFriendlyAttackers++;
 					}
 				}
-				if (nearbyFriendlyAttackers >= MIN_PROPHETS_FOR_SWARM &&
-					friendlyUnits[SPECS.CRUSADER] >= MIN_CRUSADERS_FOR_SWARM &&
-					friendlyUnits[SPECS.PREACHER] >= MIN_PREACHERS_FOR_SWARM) {
+				if (visibleFriendlyCrusaders >= MIN_CRUSADERS_FOR_SWARM &&
+					visibleFriendlyProphets >= MIN_PROPHETS_FOR_SWARM &&
+					visibleFriendlyPreachers >= MIN_PREACHERS_FOR_SWARM) {
 
 					log("Beginning swarm");
 					lastSwarm = me.turn;
