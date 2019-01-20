@@ -35,7 +35,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Game staging constants
 	private static final int KARB_RESERVE_TURN_THRESHOLD = 30; // Number of turns during which we reserve karbonite just in case
 	private static final int ALLOW_CHURCHES_TURN_THRESHOLD = 50; // When we start to allow pilgrims to build churches
-	private static final int FUEL_FOR_SWARM = 2500; // Min fuel before we allow a swarm
+	private static final int FUEL_FOR_SWARM = 3000; // Min fuel before we allow a swarm
 
 	// Data left over from previous round
 	private int prevKarbonite;
@@ -1323,6 +1323,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int[] numPilgrimsAtCluster;
 		private boolean[] clusterBelongsToMe;
 		private boolean[] clusterIsDefended;
+		private static final int CLUSTER_CENTRE_THRESHOLD = 4; // How much closer (r, not r^2) can it be to the enemy than to me to be still 'on our side'
 
 		private boolean isFirstCastle;
 		private boolean[] isCastle;
@@ -1491,8 +1492,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// Assume the worst case: the unknown pilgrims are right there.
 					if (numPilgrimsAtCluster[clusterVisitOrder[i]]+numPilgrimsUnknownCluster < clusterSize[clusterVisitOrder[i]]) {
 						// Only go to clusters on my half of the board
-						if (myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]]) <
-							myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]].opposite(symmetryStatus))) {
+						if (Math.sqrt(myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]])) - (double)CLUSTER_CENTRE_THRESHOLD <
+							Math.sqrt(myLoc.distanceSquaredTo(clusterCentroid[clusterVisitOrder[i]].opposite(symmetryStatus)))) {
 
 							pilgrimClusterAssignment = clusterVisitOrder[i];
 							break;
@@ -1627,7 +1628,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (currentSwarmLocation != null) {
 				// Tell our units to go here
 				int unitsToSend = minimumIdToAttackWith();
-				log("Sending ids to swarm " + unitsToSend + " with id " + unitsToSend);
+				log("Sending ids to swarm " + unitsToSend);
 				communications.sendRadio(unitsToSend|ATTACK_ID_MASK, getReasonableBroadcastDistance(false));
 				currentSwarmLocation = null;
 			} else if (fuel >= FUEL_FOR_SWARM && thresholdOk(lastSwarm, GAP_BETWEEN_SWARM_THRESHOLD)) {
