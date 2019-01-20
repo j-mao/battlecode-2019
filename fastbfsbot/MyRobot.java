@@ -33,7 +33,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private int numFuel;
 
 	// Game staging constants
-	private static final int KARB_RESERVE = 60; // how much karbonite to ensure we have at all times.
 	private static final int ALLOW_CHURCHES_TURN_THRESHOLD = 50; // When we start to allow pilgrims to build churches
 	private static final int FUEL_FOR_SWARM = 3000; // Min fuel before we allow a swarm
 
@@ -576,6 +575,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private MapLocation createLocation(Robot r) {
 		return new MapLocation(r.x, r.y);
+	}
+
+	private int karboniteReserve() {
+		if (globalRound < SPECS.MAX_ROUNDS - 5) {
+			return 60;
+		}
+		return 0;
 	}
 
 	private boolean isStructure(int unitType) {
@@ -1534,7 +1540,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 
 				if ((saveKarboniteForChurch &&
-					karbonite - KARB_RESERVE < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
+					karbonite - karboniteReserve() < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
 					(me.turn > 250 && fuel < FUEL_FOR_SWARM)) {
 
 					toBuild = -1;
@@ -1542,7 +1548,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (toBuild != -1 &&
-				karbonite - (buildUrgently ? 0 : KARB_RESERVE) >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
+				karbonite - (buildUrgently ? 0 : karboniteReserve()) >= SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE &&
 				fuel >= SPECS.UNITS[toBuild].CONSTRUCTION_FUEL) {
 
 				boolean isAllowedToBuild = true;
@@ -1910,7 +1916,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null &&
 				((myLoc.get(karboniteMap) && me.karbonite < SPECS.UNITS[me.unit].KARBONITE_CAPACITY) ||
-				(myLoc.get(fuelMap) && me.fuel < SPECS.UNITS[me.unit].FUEL_CAPACITY && (karbonite >= KARB_RESERVE || !hasUnoccupiedKarbonite(myCluster))))) {
+				(myLoc.get(fuelMap) && me.fuel < SPECS.UNITS[me.unit].FUEL_CAPACITY && !hasUnoccupiedKarbonite(myCluster)))) {
 
 				myAction = mine();
 			}
@@ -1918,7 +1924,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null &&
 				!churchIsBuilt &&
 				(myLoc.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
-				karbonite - KARB_RESERVE >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
+				karbonite - karboniteReserve() >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
 				fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL &&
 				clusterCentroid[myCluster].isOccupiable()) {
 
@@ -1957,7 +1963,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							// We could build a church that would be nice
 							if (!churchIsBuilt &&
 								(location.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
-								karbonite - KARB_RESERVE >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
+								karbonite - karboniteReserve() >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
 								fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
 
 								return true;
@@ -1970,7 +1976,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							if (location.get(karboniteMap) && me.karbonite != SPECS.UNITS[me.unit].KARBONITE_CAPACITY) {
 								return true;
 							}
-							if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && (karbonite >= KARB_RESERVE || !hasUnoccupiedKarbonite(myCluster))) {
+							if (location.get(fuelMap) && me.fuel != SPECS.UNITS[me.unit].FUEL_CAPACITY && !hasUnoccupiedKarbonite(myCluster)) {
 								return true;
 							}
 
