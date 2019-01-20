@@ -728,31 +728,35 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	//////// Communications library ////////
 
-	private interface Communicator {
+	private abstract class Communicator {
 
-		public static final int NO_MESSAGE = -1;
+		static final int NO_MESSAGE = -1;
 
-		public int readRadio(Robot broadcaster);
-		public void sendRadio(int value, int signalRadius);
-		public int readCastle(Robot broadcaster);
-		public void sendCastle(int value);
+		boolean isRadioing(Robot broadcaster) {
+			return MyRobot.this.isRadioing(broadcaster) && broadcaster.id != me.id;
+		}
+
+		abstract int readRadio(Robot broadcaster);
+		abstract void sendRadio(int value, int signalRadius);
+		abstract int readCastle(Robot broadcaster);
+		abstract void sendCastle(int value);
 	}
 
 	// Use this for local tests
-	private class PlaintextCommunicator implements Communicator {
+	private class PlaintextCommunicator extends Communicator {
 
 		@Override
-		public int readRadio(Robot broadcaster) {
+		int readRadio(Robot broadcaster) {
 			return broadcaster.signal;
 		}
 
 		@Override
-		public void sendRadio(int value, int signalRadius) {
+		void sendRadio(int value, int signalRadius) {
 			signal(value, signalRadius);
 		}
 
 		@Override
-		public int readCastle(Robot broadcaster) {
+		int readCastle(Robot broadcaster) {
 			// Prevent attempting to read before robot was born
 			if (broadcaster.turn == 0 || (broadcaster.turn == 1 && me.id == broadcaster.id))
 				return NO_MESSAGE;
@@ -760,13 +764,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		@Override
-		public void sendCastle(int value) {
+		void sendCastle(int value) {
 			castleTalk(value);
 		}
 	}
 
 	// Use this for all uploaded submissions
-	private class EncryptedCommunicator implements Communicator {
+	private class EncryptedCommunicator extends Communicator {
 
 		private final int RADIO_MAX = 1 << (SPECS.COMMUNICATION_BITS);
 		private final int RADIO_PAD = 0x420b1a3e % RADIO_MAX;
@@ -774,14 +778,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private final int CASTLE_PAD = 0x420b1a3e % CASTLE_MAX;
 
 		@Override
-		public int readRadio(Robot broadcaster) {
+		int readRadio(Robot broadcaster) {
 			return broadcaster.signal
 				^ RADIO_PAD
 				^ (Math.abs(SimpleRandom.advance(broadcaster.id ^ broadcaster.signal_radius)) % RADIO_MAX);
 		}
 
 		@Override
-		public void sendRadio(int value, int signalRadius) {
+		void sendRadio(int value, int signalRadius) {
 			signal(value
 					^ RADIO_PAD
 					^ (Math.abs(SimpleRandom.advance(me.id ^ signalRadius)) % RADIO_MAX),
@@ -789,7 +793,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		@Override
-		public int readCastle(Robot broadcaster) {
+		int readCastle(Robot broadcaster) {
 			// Prevent attempting to decode before robot was born
 			if (broadcaster.turn == 0 || (broadcaster.turn == 1 && me.id == broadcaster.id))
 				return NO_MESSAGE;
@@ -799,7 +803,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		@Override
-		public void sendCastle(int value) {
+		void sendCastle(int value) {
 			castleTalk(value
 					^ CASTLE_PAD
 					^ (Math.abs(SimpleRandom.advance(me.id)) % CASTLE_MAX));
@@ -1423,7 +1427,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							saveKarboniteForChurch = true;
 						}
 					}
-					if (isRadioing(r) && (communications.readRadio(r) >> 12) == (ATTACK_LOCATION_MASK >> 12) && r.id != me.id) {
+					if (communications.isRadioing(r) &&
+						(communications.readRadio(r) >> 12) == (ATTACK_LOCATION_MASK >> 12) &&
+						r.id != me.id) {
+
 						lastSwarm = r.turn;
 					}
 				}
@@ -1792,7 +1799,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (me.turn == 1) {
 				// get what cluster we're assigned to
 				Robot castle = getRobot(myHome.get(visibleRobotMap));
-				if (isRadioing(castle) && (communications.readRadio(castle) >> 12) == (WORKER_SEND_MASK >> 12)) {
+				if (communications.isRadioing(castle) && (communications.readRadio(castle) >> 12) == (WORKER_SEND_MASK >> 12)) {
 					myCluster = communications.readRadio(castle) ^ WORKER_SEND_MASK;
 				} else {
 					log("wtf my castle didn't tell me where to go??");
@@ -1818,7 +1825,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 					myHome = createLocation(r);
 				}
-				if (isRadioing(r) && (!isVisible(r) || (r.unit == SPECS.CASTLE && r.team == me.team))) {
+				if (communications.isRadioing(r) && (!isVisible(r) || (r.unit == SPECS.CASTLE && r.team == me.team))) {
 					if (communications.readRadio(r) == END_ATTACK) {
 						attackEnded = true;
 					}
@@ -2019,7 +2026,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			// Check for assignment from castle
 			if (isSquadUnitType(me.unit)) {
 				for (Robot r: visibleRobots) {
-					if (isRadioing(r)) {
+					if (communications.isRadioing(r)) {
 						int what = communications.readRadio(r);
 						if ((what >> 12) == (LONG_DISTANCE_MASK >> 12)) {
 							mySpecificRobotController = new AttackerController(new MapLocation(what&0xfff), myHome);
