@@ -2265,6 +2265,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class IdlingAttackerController extends MobileRobotController {
 
+		// An offset we use to cheat and use the same formula for both turtles and idling attackers
+		private static final int IDLING_OFFSET_CONSTANT = 2;
+
 		private MapLocation possibleAttackLocation = null;
 
 		IdlingAttackerController() {
@@ -2300,12 +2303,95 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = tryToAttack();
 
-			if (myAction == null) {
-				Direction dir = dirs[rng.nextInt()%8];
-				myAction = move(dir.getX(), dir.getY());
+			if (myAction == null && !isGoodIdlingLocation(myLoc)) {
+				Direction bestDir = myBfsSolver.nextStep();
+				if (bestDir == null) {
+					int closestDis = smallestIdlingDistanceToCastle();
+					if (closestDis != Integer.MAX_VALUE) {
+						myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
+							(location)->{ return isGoodIdlingLocation(location) && calculateIdlingMetric(location) == closestDis; },
+							(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
+							(location)->{ return location.isOccupiable() && location.get(visibleRobotMap) != MAP_INVISIBLE; });
+						bestDir = myBfsSolver.nextStep();
+					}
+				}
+
+				if (bestDir == null) {
+					// Move somewhere away from the castle
+					for (int i = 0; i < 8; i++) {
+						MapLocation newLoc = myLoc.add(dirs[i]);
+						if (newLoc.isOccupiable() && newLoc.distanceSquaredTo(myHome) > myLoc.distanceSquaredTo(myHome)) {
+							bestDir = dirs[i];
+							break;
+						}
+					}
+				}
+
+				if (bestDir == null) {
+					bestDir = dirs[rng.nextInt() % 8];
+				}
+
+				if (myLoc.add(bestDir).isOccupiable()) {
+					myAction = move(bestDir.getX(), bestDir.getY());
+				}
+			}
+
+			if (myAction == null && (me.karbonite != 0 || me.fuel != 0)) {
+				myAction = tryToGiveTowardsLocation(myHome);
 			}
 
 			return myAction;
+		}
+
+		private boolean isGoodIdlingLocation(MapLocation location) {
+			if (location.get(karboniteMap) || location.get(fuelMap)) {
+				return false;
+			}
+			return (myHome.getX() + myHome.getY() + location.getX() + location.getY()) % 2 == 0;
+		}
+
+		private int calculateIdlingMetric(MapLocation location) {
+			// Idea: we want to be close to our castle, but also be organised based on distance to enemy
+			// Just some random functions and constants I came up with, see how it goes
+
+			if (symmetryStatus == BoardSymmetryType.HOR_SYMMETRICAL) {
+				if (myHome.getY() < boardSize/2) {
+					location = new MapLocation(location.getX(), location.getY()-IDLING_OFFSET_CONSTANT);
+				} else {
+					location = new MapLocation(location.getX(), location.getY()+IDLING_OFFSET_CONSTANT);
+				}
+			} else if (symmetryStatus == BoardSymmetryType.VER_SYMMETRICAL) {
+				if (myHome.getX() < boardSize/2) {
+					location = new MapLocation(location.getX()-IDLING_OFFSET_CONSTANT, location.getY());
+				} else {
+					location = new MapLocation(location.getX()+IDLING_OFFSET_CONSTANT, location.getY());
+				}
+			}
+
+			double homeDistancePenalty = Math.sqrt(myHome.distanceSquaredTo(location));
+			homeDistancePenalty /= 4;
+			double enemyDifferencePenalty = Math.abs(Math.sqrt(myHome.opposite(symmetryStatus).distanceSquaredTo(location)) - Math.sqrt(myHome.opposite(symmetryStatus).distanceSquaredTo(myHome)));
+			double enemyDistancePenalty = Math.sqrt(myHome.opposite(symmetryStatus).distanceSquaredTo(location));
+			enemyDistancePenalty /= 8;
+
+			// Multiply by some big number to preserve precision
+			double value = homeDistancePenalty + enemyDifferencePenalty + enemyDistancePenalty;
+			return ((int) (value*1000));
+		}
+
+		private int smallestIdlingDistanceToCastle() {
+			// What is the distance from our castle to the closest turtle location we can see
+			int bestValue = Integer.MAX_VALUE;
+			int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
+			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+				if (i*i+j*j <= SPECS.UNITS[me.unit].VISION_RADIUS) {
+					MapLocation location = myLoc.add(i, j);
+					if (location.isOccupiable() && isGoodIdlingLocation(location)) {
+						bestValue = Math.min(bestValue, calculateIdlingMetric(location));
+					}
+				}
+			}
+			return bestValue;
 		}
 	}
 
