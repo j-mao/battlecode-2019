@@ -574,22 +574,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	//////// Helper functions ////////
 
-	private MoveAction move(Direction dir) {
-		return move(dir.getX(), dir.getY());
-	}
-
-	private BuildAction buildUnit(int unitType, Direction dir) {
-		return buildUnit(unitType, dir.getX(), dir.getY());
-	}
-
-	private GiveAction give(Direction dir, int k, int f) {
-		return give(dir.getX(), dir.getY(), k, f);
-	}
-
-	private AttackAction attack(Direction dir) {
-		return attack(dir.getX(), dir.getY());
-	}
-
 	private MapLocation createLocation(Robot r) {
 		return new MapLocation(r.x, r.y);
 	}
@@ -1187,7 +1171,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				for (int i = 0; i < 8; i++) {
 					MapLocation location = myLoc.add(dirs[i]);
 					if (location.isOnMap() && location.get(map) == MAP_PASSABLE && location.get(visibleRobotMap) == MAP_EMPTY) {
-						myAction = buildUnit(toBuild, dirs[i]);
+						myAction = buildUnit(toBuild, dirs[i].getX(), dirs[i].getY());
 						break;
 					}
 				}
@@ -1209,7 +1193,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 
 				if (bestBuildDir != null) {
-					myAction = buildUnit(toBuild, bestBuildDir);
+					myAction = buildUnit(toBuild, bestBuildDir.getX(), bestBuildDir.getY());
 				}
 			}
 			return myAction;
@@ -1246,7 +1230,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (unit != MAP_EMPTY && unit != MAP_INVISIBLE) {
 						Robot robot = getRobot(unit);
 						if (robot.team == me.team && (isStructure(robot.unit) || robot.unit == SPECS.PILGRIM)) {
-							myAction = give(dirs[dir], me.karbonite, me.fuel);
+							myAction = give(dirs[dir].getX(), dirs[dir].getY(), me.karbonite, me.fuel);
 							if (isStructure(robot.unit)) {
 								break;
 							}
@@ -1671,7 +1655,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (dist > SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) continue;
 
 					if (dps > cdps || (dps == cdps && within && !cwithin || (within == cwithin && dist < cdist))) {
-						res = attack(myLoc.directionTo(loc));
+						Direction tmp = myLoc.directionTo(loc);
+						res = attack(tmp.getX(), tmp.getY());
 						cdps = dps; cwithin = within; cdist = dist;
 					}
 				}
@@ -1923,9 +1908,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				!churchIsBuilt &&
 				(myLoc.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
 				karbonite - KARB_RESERVE >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
-				fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
+				fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL &&
+				clusterCentroid[myCluster].isOccupiable()) {
 
-				myAction = buildUnit(SPECS.CHURCH, myLoc.directionTo(clusterCentroid[myCluster]));
+				Direction tmp = myLoc.directionTo(clusterCentroid[myCluster]);
+				myAction = buildUnit(SPECS.CHURCH, tmp.getX(), tmp.getY());
 			}
 
 			if (myAction == null) {
@@ -2000,7 +1987,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					myLoc.add(bestDir).isOccupiable() &&
 					thresholdOk(myLoc.add(bestDir).get(isDangerous), DANGER_THRESHOLD)) {
 
-					myAction = move(bestDir);
+					myAction = move(bestDir.getX(), bestDir.getY());
 				} else {
 					myAction = tryToGoSomewhereNotDangerous(2, SPECS.UNITS[me.unit].SPEED);
 				}
@@ -2113,7 +2100,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						}
 					}
 					if (bestLoc != null) {
-						myAction = move(myLoc.directionTo(bestLoc));
+						Direction tmp = myLoc.directionTo(bestLoc);
+						myAction = move(tmp.getX(), tmp.getY());
 					}
 				}
 			}
@@ -2147,7 +2135,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 
 				if (myLoc.add(bestDir).isOccupiable()) {
-					myAction = move(bestDir);
+					myAction = move(bestDir.getX(), bestDir.getY());
 				}
 			}
 
@@ -2256,7 +2244,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (bestDir != null) {
 					MapLocation newLoc = myLoc.add(bestDir);
 					if (newLoc.isOccupiable()) {
-						myAction = move(bestDir);
+						myAction = move(bestDir.getX(), bestDir.getY());
 					}
 				}
 			}
@@ -2338,7 +2326,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						shouldMove = !onlyDefendingUnit;
 					}
 					if (shouldMove) {
-						myAction = move(bestDir);
+						myAction = move(bestDir.getX(), bestDir.getY());
 					}
 				}
 			}
