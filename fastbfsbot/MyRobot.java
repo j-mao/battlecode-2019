@@ -1331,15 +1331,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int prophetsCreated;
 		private int preachersCreated;
 
-		private static final int SWARM_THRESHOLD = 50;
-		private static final int GAP_BETWEEN_SWARM_THRESHOLD = 100;
-		private static final double PROPORTION_TO_SEND_IN_SWARM = 0.6;
+		private static final int MIN_CRUSADERS_FOR_SWARM = 20;
+		private static final int MIN_PROPHETS_FOR_SWARM = 50; // Note that only a proportion of these will be sent
+		private static final int MIN_PREACHERS_FOR_SWARM = 15;
+		private static final int TURNS_BETWEEN_CONSECUTIVE_SWARMS = 100;
+		private static final double PROPORTION_OF_PROPHETS_TO_SEND_IN_SWARM = 0.6;
 		private int lastSwarm;
 		private MapLocation currentSwarmLocation; 
-
-		// Radio of units, assumes crusader <= preacher <= prophet
-		private static final int CRUSADER_TO_PREACHER = 100;
-		private static final int PREACHER_TO_PROPHET = 2;
 
 		CastleController() {
 			super();
@@ -1401,6 +1399,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			for (int i = 1; i <= numberOfClusters; i++) {
 				numPilgrimsAtCluster[i] = 0;
+			}
+
+			int visibleFriendlyProphets = 0;
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.team == me.team && r.unit == SPECS.PROPHET) {
+					visibleFriendlyProphets++;
+				}
 			}
 
 			for (Robot r: visibleRobots) {
@@ -1470,7 +1475,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int distressBroadcastDistance = 0;
 			if (imminentAttack == null) {
 				if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
-					// TODO are we really rushing though?
 					// Reset these because these units will go and rush a castle
 					crusadersCreated = prophetsCreated = preachersCreated = 0;
 					downgradeAttackStatus();
@@ -1536,15 +1540,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							isBodyguard = true;
 						}
 					} else {
-						/*if (friendlyUnits[SPECS.PREACHER] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER &&
-							friendlyUnits[SPECS.PREACHER]*PREACHER_TO_PROPHET <= friendlyUnits[SPECS.PROPHET]) {
-
-							toBuild = SPECS.PREACHER;
-						} else if (friendlyUnits[SPECS.PROPHET] <= friendlyUnits[SPECS.CRUSADER]*CRUSADER_TO_PREACHER*PREACHER_TO_PROPHET) {*/
+						if (visibleFriendlyProphets < MIN_PROPHETS_FOR_SWARM) {
 							toBuild = SPECS.PROPHET;
-						/*} else {
+						} else if (friendlyUnits[SPECS.PREACHER] < MIN_PREACHERS_FOR_SWARM) {
+							toBuild = SPECS.PREACHER;
+						} else if (friendlyUnits[SPECS.CRUSADER] < MIN_CRUSADERS_FOR_SWARM) {
 							toBuild = SPECS.CRUSADER;
-						}*/
+						}
 
 						if ((saveKarboniteForChurch &&
 							karbonite < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
@@ -1630,7 +1632,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				log("Sending ids to swarm " + unitsToSend + " with id " + unitsToSend);
 				communications.sendRadio(unitsToSend|ATTACK_ID_MASK, getReasonableBroadcastDistance(false));
 				currentSwarmLocation = null;
-			} else if (fuel >= FUEL_FOR_SWARM && thresholdOk(lastSwarm, GAP_BETWEEN_SWARM_THRESHOLD)) {
+			} else if (fuel >= FUEL_FOR_SWARM && thresholdOk(lastSwarm, TURNS_BETWEEN_CONSECUTIVE_SWARMS)) {
 				// Maybe we are in a good position... attack?
 
 				int nearbyFriendlyAttackers = 0;
@@ -1639,7 +1641,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						nearbyFriendlyAttackers++;
 					}
 				}
-				if (nearbyFriendlyAttackers >= SWARM_THRESHOLD) {
+				if (nearbyFriendlyAttackers >= MIN_PROPHETS_FOR_SWARM) {
 					log("Beginning swarm");
 					lastSwarm = me.turn;
 					currentSwarmLocation = attackTargetList.poll();
@@ -1724,13 +1726,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			int numTurtling = numWithIdAtLeast(turtlingUnits, 0);
-			// Binary search for PROPORTION_TO_SEND_IN_SWARM
+			// Binary search for PROPORTION_OF_PROPHETS_TO_SEND_IN_SWARM
 			int s = 1;
 			int e = SPECS.MAX_ID;
 			while (s != e) {
 				int m = (int)Math.floor((s+e)/2);
 				int num = numWithIdAtLeast(turtlingUnits, m);
-				if (num > (int)(PROPORTION_TO_SEND_IN_SWARM*(double)numTurtling)) {
+				if (num > (int)(PROPORTION_OF_PROPHETS_TO_SEND_IN_SWARM*(double)numTurtling)) {
 					s = m+1;
 				} else {
 					e = m;
