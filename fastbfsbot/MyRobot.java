@@ -829,21 +829,21 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			},
 			{
 				new Direction(-2, -2),
-				new Direction(-2, -1),
-				new Direction(-2, 0),
-				new Direction(-2, 1),
-				new Direction(-2, 2),
-				new Direction(-1, 2),
-				new Direction(0, 2),
-				new Direction(1, 2),
-				new Direction(2, 2),
-				new Direction(2, 1),
-				new Direction(2, 0),
-				new Direction(2, -1),
-				new Direction(2, -2),
-				new Direction(1, -2),
+				new Direction(-1, -2),
 				new Direction(0, -2),
-				new Direction(-1, -2)
+				new Direction(1, -2),
+				new Direction(2, -2),
+				new Direction(2, -1),
+				new Direction(2, 0),
+				new Direction(2, 1),
+				new Direction(2, 2),
+				new Direction(1, 2),
+				new Direction(0, 2),
+				new Direction(-1, 2),
+				new Direction(-2, 2),
+				new Direction(-2, 1),
+				new Direction(-2, 0),
+				new Direction(-2, -1)
 			},
 			{
 				new Direction(0, -3),
@@ -885,6 +885,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				0b0111,
 				0b0111,
 				0b0111
+			},
+			{0, 0, 0, 0}
+		};
+		private final int[][] notOnMapMask = {
+			{
+				0b0111111111111100,
+				0b1111111111110001,
+				0b1111111111000111,
+				0b1111111100011111,
+				0b1111110001111111,
+				0b1111000111111111,
+				0b1100011111111111,
+				0b0001111111111111
+			},
+			{
+				0b1111,
+				0b1111,
+				0b1110,
+				0b1111,
+				0b1111,
+				0b1111,
+				0b1101,
+				0b1111,
+				0b1111,
+				0b1111,
+				0b1011,
+				0b1111,
+				0b1111,
+				0b1111,
+				0b0111,
+				0b1111,
 			},
 			{0, 0, 0, 0}
 		};
@@ -962,25 +993,26 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					int nextMsk = (1 << numDirs[level+1]) - 1;
 					for (; curMsk > 0; curMsk ^= (curMsk&-curMsk)) {
 						Direction dir = dirsAvailable[level][__notbuiltin_ctz(curMsk)];
-						boolean maskApplicable = true;
 						if (dir.getMagnitude() <= maxSpeed) {
 							MapLocation v = u.add(dir);
-							if (v.isOnMap() && v.get(bfsVisited) != bfsRunId) {
-								v.set(bfsVisited, bfsRunId);
+							if (v.isOnMap()) {
 								if (visitCondition.apply(v)) {
-									v.set(from, dir);
-									qL.add(v);
-									if (ud == null) {
-										qD.add(dir);
-									} else {
-										qD.add(ud);
+									if (v.get(bfsVisited) != bfsRunId) {
+										v.set(bfsVisited, bfsRunId);
+										v.set(from, dir);
+										qL.add(v);
+										if (ud == null) {
+											qD.add(dir);
+										} else {
+											qD.add(ud);
+										}
 									}
-								} else {
-									maskApplicable = false;
+									nextMsk &= succeedMask[level][__notbuiltin_ctz(curMsk)];
 								}
+							} else {
+								nextMsk &= notOnMapMask[level][__notbuiltin_ctz(curMsk)];
 							}
-						}
-						if (maskApplicable) {
+						} else {
 							nextMsk &= succeedMask[level][__notbuiltin_ctz(curMsk)];
 						}
 					}
