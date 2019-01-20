@@ -967,8 +967,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (dir.getMagnitude() <= maxSpeed) {
 							MapLocation v = u.add(dir);
 							if (v.isOnMap() && v.get(bfsVisited) != bfsRunId) {
+								v.set(bfsVisited, bfsRunId);
 								if (visitCondition.apply(v)) {
-									v.set(bfsVisited, bfsRunId);
 									v.set(from, dir);
 									qL.add(v);
 									if (ud == null) {
@@ -1805,6 +1805,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					myLoc.add(bestDir).get(isDangerous) == me.turn ||
 					attackEnded) {
 
+					int resourcesRemaining = clusterSize[myCluster];
+					// TODO if the cluster is under attack the bfs may not visit it, and we still bfs everything
+					// fix this by doing something more intelligent
+
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
 						(location)->{
 							// We could try to give
@@ -1842,8 +1846,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 							return false;
 						},
-						(location)->{ return location.get(visibleRobotMap) > 0 && !location.equals(myLoc); },
 						(location)->{
+							if (resourcesRemaining <= 0) {
+								return true;
+							}
+							return location.get(visibleRobotMap) > 0 && !location.equals(myLoc);
+						},
+						(location)->{
+							if ((location.get(karboniteMap) || location.get(fuelMap)) && location.get(clusterId) == myCluster) {
+								resourcesRemaining--;
+							}
 							return location.isOccupiable() && thresholdOk(location.get(isDangerous), DANGER_THRESHOLD);
 						});
 					bestDir = myBfsSolver.nextStep();
