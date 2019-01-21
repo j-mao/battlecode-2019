@@ -231,16 +231,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	// Works for locations or directions
-	private int getX(int locOrDir) {
+	private static int getX(int locOrDir) {
 		return (((locOrDir >> 7) + 1) >> 1);
 	}
 
 	// Works for locations or directions
-	private int getY(int locOrDir) {
+	private static int getY(int locOrDir) {
 		return (locOrDir & 255) - ((locOrDir & 128) << 1);
 	}
 
-	private int oppositeLoc(int mapLoc, BoardSymmetryType symm) {
+	private static int oppositeLoc(int mapLoc, BoardSymmetryType symm) {
 		int x = getX(mapLoc);
 		int y = getY(mapLoc);
 		switch (symm) {
@@ -253,7 +253,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
-	private int addToLoc(int mapLoc, int dir) {
+	private static int addToLoc(int mapLoc, int dir) {
 		// Sanitise location
 		int x = getX(mapLoc) + getX(dir);
 		int y = getY(mapLoc) + getY(dir);
@@ -261,15 +261,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return makeMapLocation(x, y);
 	}
 
-	private int directionTo(int mapLocA, int mapLocB) {
+	private static int directionTo(int mapLocA, int mapLocB) {
 		return mapLocB - mapLocA;
 	}
 
-	private int distanceSquaredTo(int mapLocA, int mapLocB) {
+	private static int distanceSquaredTo(int mapLocA, int mapLocB) {
 		return getMagnitude(directionTo(mapLocA, mapLocB));
 	}
 
-	private boolean isOnMap(int mapLoc) {
+	private static boolean isOnMap(int mapLoc) {
 		return mapLoc != INVALID_LOC;
 	}
 
@@ -277,31 +277,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return isOnMap(mapLoc) && get(mapLoc, map) == MAP_PASSABLE && get(mapLoc, visibleRobotMap) <= 0;
 	}
 
-	private void set(int mapLoc, boolean[][] arr, boolean value) {
+	private static void set(int mapLoc, boolean[][] arr, boolean value) {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
 
-	private void set(int mapLoc, int[][] arr, int value) {
+	private static void set(int mapLoc, int[][] arr, int value) {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
 
-	private <T> void set(int mapLoc, T[][] arr, T value) {
+	private static <T> void set(int mapLoc, T[][] arr, T value) {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
 
-	private boolean get(int mapLoc, boolean[][] arr) {
+	private static boolean get(int mapLoc, boolean[][] arr) {
 		return arr[getY(mapLoc)][getX(mapLoc)];
 	}
 
-	private int get(int mapLoc, int[][] arr) {
+	private static int get(int mapLoc, int[][] arr) {
 		return arr[getY(mapLoc)][getX(mapLoc)];
 	}
 
-	private <T> T get(int mapLoc, T[][] arr) {
+	private static <T> T get(int mapLoc, T[][] arr) {
 		return arr[getY(mapLoc)][getX(mapLoc)];
 	}
 
-	private int hashLoc(int mapLoc) {
+	private static int hashLoc(int mapLoc) {
 		return ((mapLoc >> 8) << 6) | (mapLoc & 63);
 	}
 
@@ -316,20 +316,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return makeDirection((hashVal >> 4) - 8, (hashVal & 15) - 8);
 	}
 
-	private int getMagnitude(int dir) {
+	private static int getMagnitude(int dir) {
 		int x = getX(dir), y = getY(dir);
 		return x * x + y * y;
 	}
 
-	private int oppositeDir(int dir) {
+	private static int oppositeDir(int dir) {
 		return -dir;
 	}
 
-	private int addDirs(int dirA, int dirB) {
+	private static int addDirs(int dirA, int dirB) {
 		return dirA + dirB;
 	}
 
-	private int hashDir(int dir) {
+	private static int hashDir(int dir) {
 		return ((getX(dir) + 8) << 4) | (getY(dir) + 8);
 	}
 
