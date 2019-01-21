@@ -55,7 +55,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Cluster work
 	private static final int MAX_NUMBER_CLUSTERS = 50;
-	private static final int CLUSTER_DISTANCE = 9;
+	private static final int CLUSTER_DISTANCE = 13;
 	private int[][] clusterId;
 	private int[] clusterCentroid;
 	private int[] clusterSize;
