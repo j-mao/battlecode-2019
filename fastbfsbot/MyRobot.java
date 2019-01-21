@@ -1936,7 +1936,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 							// We could build a church that would be nice
 							if (!churchIsBuilt &&
-								(location.distanceSquaredTo(clusterCentroid[myCluster])+1)/2 == 1 &&
+								(distanceSquaredTo(location, clusterCentroid[myCluster])+1)/2 == 1 &&
 								karbonite - karboniteReserve() >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE &&
 								fuel >= SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_FUEL) {
 
@@ -2402,7 +2402,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			// TODO broadcast attack success
 
 			if (myAction == null &&
-				myTargetLoc != myHome &&
+				myTargetLoc == myHome &&
 				distanceSquaredTo(myLoc, myTargetLoc) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
 
 				if (me.unit == SPECS.PROPHET) {
