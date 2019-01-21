@@ -1521,29 +1521,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				buildUrgently = true;
 			} else if (attackStatus == AttackStatusType.ATTACK_ONGOING) {
 				myAction = tryToAttack();
-			} else if (karbonite >= SPECS.INITIAL_KARBONITE - SPECS.UNITS[SPECS.PILGRIM].CONSTRUCTION_KARBONITE && me.turn == 1) {
-				toBuild = SPECS.PILGRIM;
-			} else if (pilgrimClusterAssignment != -1) {
-				if (clusterIsDefended[pilgrimClusterAssignment] || pilgrimClusterAssignment == clusterVisitOrder[0]) {
+			}
+
+			if (toBuild == -1 && myAction == null) {
+				if (karbonite >= SPECS.INITIAL_KARBONITE - SPECS.UNITS[SPECS.PILGRIM].CONSTRUCTION_KARBONITE && me.turn == 1) {
 					toBuild = SPECS.PILGRIM;
+				} else if (pilgrimClusterAssignment != -1) {
+					if (clusterIsDefended[pilgrimClusterAssignment] || pilgrimClusterAssignment == clusterVisitOrder[0]) {
+						toBuild = SPECS.PILGRIM;
+					} else {
+						toBuild = SPECS.PROPHET;
+						isBodyguard = true;
+					}
 				} else {
-					toBuild = SPECS.PROPHET;
-					isBodyguard = true;
-				}
-			} else {
-				if (visibleFriendlyProphets < MIN_PROPHETS_FOR_SWARM) {
-					toBuild = SPECS.PROPHET;
-				} else if (visibleFriendlyPreachers < MIN_PREACHERS_FOR_SWARM) {
-					toBuild = SPECS.PREACHER;
-				} else if (visibleFriendlyCrusaders < MIN_CRUSADERS_FOR_SWARM) {
-					toBuild = SPECS.CRUSADER;
-				}
+					if (visibleFriendlyProphets < MIN_PROPHETS_FOR_SWARM) {
+						toBuild = SPECS.PROPHET;
+					} else if (visibleFriendlyPreachers < MIN_PREACHERS_FOR_SWARM) {
+						toBuild = SPECS.PREACHER;
+					} else if (visibleFriendlyCrusaders < MIN_CRUSADERS_FOR_SWARM) {
+						toBuild = SPECS.CRUSADER;
+					} else if (globalRound >= SPECS.MAX_ROUNDS-5) {
+						toBuild = SPECS.CRUSADER;
+					} else {
+						toBuild = SPECS.PROPHET;
+					}
 
-				if ((saveKarboniteForChurch &&
-					karbonite - karboniteReserve() < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
-					(me.turn > 250 && fuel < FUEL_FOR_SWARM)) {
+					if ((saveKarboniteForChurch &&
+						karbonite - karboniteReserve() < SPECS.UNITS[toBuild].CONSTRUCTION_KARBONITE+SPECS.UNITS[SPECS.CHURCH].CONSTRUCTION_KARBONITE) ||
+						(me.turn > 250 && fuel < FUEL_FOR_SWARM)) {
 
-					toBuild = -1;
+						toBuild = -1;
+					}
 				}
 			}
 
