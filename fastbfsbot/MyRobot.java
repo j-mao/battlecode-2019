@@ -55,7 +55,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Cluster work
 	private static final int MAX_NUMBER_CLUSTERS = 50;
-	private static final int CLUSTER_DISTANCE = 9;
+	private static final int CLUSTER_DISTANCE = 13;
 	private int[][] clusterId;
 	private int[] clusterCentroid;
 	private int[] clusterSize;
@@ -1620,6 +1620,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					attackTargetList.add(currentSwarmLocation);
 				}
 			}
+
+			if (myAction == null) {
+				myAction = antagoniseEnemyTradeCommunications();
+			}
+
 			return myAction;
 		}
 
@@ -1658,6 +1663,42 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return res;
+		}
+
+		private TradeAction acceptTrade() {
+			return proposeTrade(lastOffer[1-me.team][0], lastOffer[1-me.team][1]);
+		}
+
+		private TradeAction antagoniseEnemyTradeCommunications() {
+			if (me.team == SPECS.RED) {
+				if (lastOffer[SPECS.BLUE][0] <= 0 && lastOffer[SPECS.BLUE][1] <= 0) {
+					// Wow thanks
+					return acceptTrade();
+				} else if (lastOffer[SPECS.BLUE][0] > 0 && lastOffer[SPECS.BLUE][0] > karbonite) {
+					// Haha lol get pranked
+					return acceptTrade();
+				} else if (lastOffer[SPECS.BLUE][1] > 0 && lastOffer[SPECS.BLUE][1] > fuel) {
+					// Haha lol get pranked
+					return acceptTrade();
+				} else {
+					// Who knows they might just accept it
+					return proposeTrade(-SPECS.MAX_TRADE+1, -SPECS.MAX_TRADE+1);
+				}
+			} else {
+				if (lastOffer[SPECS.RED][0] >= 0 && lastOffer[SPECS.RED][1] >= 0) {
+					// Wow thanks
+					return acceptTrade();
+				} else if (lastOffer[SPECS.RED][0] < 0 && -lastOffer[SPECS.RED][0] > karbonite) {
+					// Haha lol get pranked
+					return acceptTrade();
+				} else if (lastOffer[SPECS.RED][1] < 0 && -lastOffer[SPECS.RED][1] > fuel) {
+					// Haha lol get pranked
+					return acceptTrade();
+				} else {
+					// Who knows they might just accept it
+					return proposeTrade(SPECS.MAX_TRADE-1, SPECS.MAX_TRADE-1);
+				}
+			}
 		}
 
 		private void readStructureLocations() {
