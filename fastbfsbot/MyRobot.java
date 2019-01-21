@@ -506,6 +506,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		while (iterator.hasNext()) {
 			val += distanceSquaredTo(loc, iterator.next());
 		}
+		// Break ties by distance to self
+		val = val * 10000 + distanceSquaredTo(loc, myLoc);
 		return val;
 	}
 
