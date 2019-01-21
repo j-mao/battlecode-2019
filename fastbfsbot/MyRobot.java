@@ -135,7 +135,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			determineSymmetricOrientation();
 			noteResourceClusters();
+		}
 
+		if (mySpecificRobotController == null) {
 			if (me.unit == SPECS.CASTLE) {
 				mySpecificRobotController = new CastleController();
 			} else if (me.unit == SPECS.CHURCH) {
