@@ -87,6 +87,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Entry point for every turn
 	public Action turn() {
 
+		// Obtain this value first, as it is needed to sanitise MapLocations
+		boardSize = map.length;
+
 		// Initialise metadata for this turn
 		visibleRobots = getVisibleRobots();
 		visibleRobotMap = getVisibleRobotMap();
@@ -94,7 +97,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		// First turn initialisation
 		if (me.turn == 1) {
-			boardSize = map.length;
 
 			prevKarbonite = karbonite;
 			prevFuel = fuel;
@@ -223,6 +225,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// MAP LOCATION
 
 	private static int makeMapLocation(int x, int y) {
+		if (x < 0 || x >= boardSize || y < 0 || y >= boardSize) return INVALID_LOC;
 		return (x << 8) + y;
 	}
 
@@ -257,7 +260,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// Sanitise location
 		int x = getX(mapLoc) + getX(dir);
 		int y = getY(mapLoc) + getY(dir);
-		if (x < 0 || x >= boardSize || y < 0 || y >= boardSize) return INVALID_LOC;
 		return makeMapLocation(x, y);
 	}
 
