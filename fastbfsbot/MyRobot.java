@@ -1567,16 +1567,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					requiredToNotify = true;
 					int myState = myCastleTalk - CASTLE_SECRET_TALK_OFFSET;
 					for (Integer castle: structureLocations.keySet()) {
-						Robot r = getRobot(castle);
-						if (r != null) {
-							int msg = communications.readCastle(r);
-							msg -= CASTLE_SECRET_TALK_OFFSET;
-							if ((msg+1)%3 == myState) {
-								isAllowedToBuild = false;
-								break;
-							} else if (msg == myState && r.id < me.id) {
-								isAllowedToBuild = false;
-								break;
+						if (isCastle[castle]) {
+							Robot r = getRobot(castle);
+							if (r != null) {
+								int msg = communications.readCastle(r);
+								msg -= CASTLE_SECRET_TALK_OFFSET;
+								if ((msg+1)%3 == myState) {
+									isAllowedToBuild = false;
+									break;
+								} else if (msg == myState && r.id < me.id) {
+									isAllowedToBuild = false;
+									break;
+								}
 							}
 						}
 					}
