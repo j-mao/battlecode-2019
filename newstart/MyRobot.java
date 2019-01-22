@@ -135,10 +135,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private abstract class Communicator {
 
 		// Bitmasks for different radio broadcast commands
-		protected static final int FARM_HALF = 0x1000;
-		protected static final int ASSIGN = 0x2000;
-		protected static final int ATTACK = 0x3000;
-		protected static final int RADIUS = 0x4000;
+		static final int FARM_HALF = 0x1000;
+		static final int ASSIGN = 0x2000;
+		static final int ATTACK = 0x3000;
+		static final int RADIUS = 0x4000;
 
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
@@ -150,16 +150,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		static final int NO_MESSAGE = -1;
 
 		// Prototype methods for executing communications
-		protected abstract void sendRadio(int message, int radius);
-		protected abstract int readRadio(Robot r);
+		abstract void sendRadio(int message, int radius);
+		abstract int readRadio(Robot r);
 		abstract void sendCastle(int message);
 		abstract int readCastle(Robot r);
-
-		////// Messages via radio //////
-
-		final void sendFarmHalfLoc(int location) {
-			sendRadio(Vector.compress(location) | FARM_HALF, 2);
-		}
 
 		final int readFarmHalfLoc() {
 			for (Robot r: visibleRobots) {
@@ -171,10 +165,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			return Vector.INVALID;
-		}
-
-		final void sendAssignedLoc(int location) {
-			sendRadio(Vector.compress(location) | ASSIGN, 2);
 		}
 
 		final int readAssignedLoc() {
@@ -197,12 +187,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class PlaintextCommunicator extends Communicator {
 
 		@Override
-		protected int readRadio(Robot r) {
+		int readRadio(Robot r) {
 			return r.signal;
 		}
 
 		@Override
-		protected void sendRadio(int value, int signalRadius) {
+		void sendRadio(int value, int signalRadius) {
 			signal(value, signalRadius);
 		}
 
@@ -230,12 +220,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private final int CASTLE_MAX = 1 << (SPECS.CASTLE_TALK_BITS);
 
 		@Override
-		protected int readRadio(Robot r) {
+		int readRadio(Robot r) {
 			return r.signal ^ (Math.abs(SimpleRandom.advance(r.id ^ r.turn)) % RADIO_MAX);
 		}
 
 		@Override
-		protected void sendRadio(int value, int signalRadius) {
+		void sendRadio(int value, int signalRadius) {
 			signal(value ^ (Math.abs(SimpleRandom.advance(me.id ^ me.turn)) % RADIO_MAX), signalRadius);
 		}
 
@@ -591,7 +581,61 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private abstract class StructureController extends SpecificRobotController {
 
-		LinkedList<Integer> availableTurtles;
+		private class UnitWelfareChecker {
+
+			private TreeMap<Integer, Integer> assignments;
+			private int previousAssignment;
+			private LinkedList<Integer> relievedLocs;
+
+			UnitWelfareChecker() {
+				assignments = new TreeMap<>();
+				previousAssignment = Vector.INVALID;
+				relievedLocs = new LinkedList<>();
+
+				for (Robot r: visibleRobots) {
+					if (isVisible(r) && r.team == me.team) {
+						assignments.put(r.id, Vector.INVALID);
+					}
+				}
+			}
+
+			void recordLocation(int location) {
+				previousAssignment = location;
+			}
+
+			/**
+			 * Run this once at the start of every turn
+			 * @return A list of locations whose assigned units no longer exist
+			 */
+			LinkedList<Integer> checkWelfare() {
+
+				// Observation: the new unit is the only never-before-seen unit in a radius of r^2 = 18
+				if (previousAssignment != Vector.INVALID) {
+					for (Robot r: visibleRobots) {
+						if (isVisible(r) && r.team == me.team && !assignments.containsKey(r.id)) {
+							if (Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 18) {
+								assignments.put(r.id, previousAssignment);
+							} else {
+								assignments.put(r.id, Vector.INVALID);
+							}
+						}
+					}
+					previousAssignment = Vector.INVALID;
+				}
+
+				relievedLocs.clear();
+				for (Integer assignedUnit: assignments.keySet()) {
+					if (getRobot(assignedUnit) == null) {
+						relievedLocs.add(assignments.get(assignedUnit));
+						assignments.remove(assignedUnit);
+					}
+				}
+				return relievedLocs;
+			}
+		}
+
+		protected LinkedList<Integer> availableTurtles;
+		protected UnitWelfareChecker myUnitWelfareChecker;
 
 		StructureController() {
 			super();
@@ -608,6 +652,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
+
+			myUnitWelfareChecker = new UnitWelfareChecker();
 		}
 
 		protected void sendStructureLocation() {
@@ -616,6 +662,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (me.turn == 2) {
 				myCastleTalk = me.y | Communicator.STRUCTURE;
 			}
+		}
+
+		protected void sendFarmHalfLoc(int location) {
+			communications.sendRadio(Vector.compress(location) | Communicator.FARM_HALF, 2);
+			myUnitWelfareChecker.recordLocation(location);
+		}
+
+		protected void sendAssignedLoc(int location) {
+			communications.sendRadio(Vector.compress(location) | Communicator.ASSIGN, 2);
+			myUnitWelfareChecker.recordLocation(location);
 		}
 
 		protected BuildAction buildInResponseToNearbyEnemies() {
@@ -655,7 +711,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					return null;
 				}
 				myAction = buildUnit(toBuild, Vector.getX(dir), Vector.getY(dir));
-				communications.sendAssignedLoc(pollClosestTurtleLocation(myLoc+dir));
+				sendAssignedLoc(pollClosestTurtleLocation(myLoc+dir));
 			}
 
 			return myAction;
@@ -859,7 +915,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			sendStructureLocation();
 			readStructureLocations();
-			checkCastleLivelihood();
+			checkTurtleWelfare();
+			checkCastlesWelfare();
 			checkResourceDepotOwnership(karboniteLocs, ownKarbonite);
 			checkResourceDepotOwnership(fuelLocs, ownFuel);
 
@@ -876,7 +933,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private void checkCastleLivelihood() {
+		private void checkTurtleWelfare() {
+			for (Integer location: myUnitWelfareChecker.checkWelfare()) {
+				if (Vector.get(location, karboniteMap)) {
+					pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(myLoc)), false);
+				} else if (Vector.get(location, fuelMap)) {
+					pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(myLoc)), false);
+				} else {
+					availableTurtles.add(location);
+				}
+			}
+		}
+
+		private void checkCastlesWelfare() {
 			// TODO
 		}
 
@@ -938,9 +1007,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
 							pilgrimAt.set(i, true);
 							if (requestFarmHalf) {
-								communications.sendFarmHalfLoc(locations.get(i));
+								sendFarmHalfLoc(locations.get(i));
 							} else {
-								communications.sendAssignedLoc(locations.get(i));
+								sendAssignedLoc(locations.get(i));
 							}
 							break;
 						}
@@ -961,6 +1030,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		Action runSpecificTurn() {
 
 			sendStructureLocation();
+			checkTurtleWelfare();
 
 			Action myAction = null;
 
@@ -969,6 +1039,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return myAction;
+		}
+
+		private void checkTurtleWelfare() {
+			for (Integer location: myUnitWelfareChecker.checkWelfare()) {
+				availableTurtles.add(location);
+			}
 		}
 	}
 
