@@ -35,12 +35,14 @@ class Vector {
 	static int compress(int mapLoc) {
 		return ((mapLoc >> 8) << 6) | (mapLoc & 63);
 	}
-
 	static int makeDirection(int x, int y) {
 		return (x << 8) + y;
 	}
 
-	static int addToLoc(int mapLoc, int dir) {
+	static int add(int mapLoc, int dir) {
+		if (mapLoc == INVALID || dir == INVALID) {
+			return INVALID;
+		}
 		int x = getX(mapLoc) + getX(dir);
 		int y = getY(mapLoc) + getY(dir);
 		return makeMapLocation(x, y);
@@ -48,6 +50,17 @@ class Vector {
 
 	static int distanceSquared(int mapLocA, int mapLocB) {
 		return magnitude(mapLocB - mapLocA);
+	}
+
+	static int opposite(int mapLoc, BoardSymmetryType symm) {
+		switch (symm) {
+			case HORIZONTAL:
+				return makeMapLocation(getX(mapLoc), MyRobot.boardSize - getY(mapLoc) - 1);
+			case VERTICAL:
+				return makeMapLocation(MyRobot.boardSize - getX(mapLoc) - 1, getY(mapLoc));
+			default:
+				return INVALID;
+		}
 	}
 
 	static int magnitude(int dir) {
@@ -77,5 +90,23 @@ class Vector {
 
 	static <T> T get(int mapLoc, T[][] arr) {
 		return arr[getY(mapLoc)][getX(mapLoc)];
+	}
+
+	static String toString(int locOrDir) {
+		return "(" + getX(locOrDir) + ", " + getY(locOrDir) + ")";
+	}
+
+	static class SortByDistance implements java.util.Comparator<Integer> {
+
+		private int refLoc;
+
+		public SortByDistance(int referenceLocation) {
+			refLoc = referenceLocation;
+		}
+
+		@Override
+		public int compare(Integer loc1, Integer loc2) {
+			return distanceSquared(refLoc, loc1) - distanceSquared(refLoc, loc2);
+		}
 	}
 }
