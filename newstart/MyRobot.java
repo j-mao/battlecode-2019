@@ -871,6 +871,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// of close to you
 		private static final int OCCUPY_FARAWAY_RESOURCE_THRESHOLD = 3;
 
+		private static final int MAX_CLUSTERS = 32;
+
 		LinkedList<Integer> karboniteLocs;
 		LinkedList<Boolean> pilgrimAtKarbonite;
 		LinkedList<Boolean> ownKarbonite;
@@ -878,6 +880,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		LinkedList<Integer> fuelLocs;
 		LinkedList<Boolean> pilgrimAtFuel;
 		LinkedList<Boolean> ownFuel;
+
+		int[] pilgrimsAtCluster;
 
 		int[] structureLocation;
 		LinkedList<Integer> castles;
@@ -895,18 +899,26 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			pilgrimAtFuel = new LinkedList<>();
 			ownFuel = new LinkedList<>();
 
+			pilgrimsAtCluster = new int[MAX_CLUSTERS+1];
+
 			structureLocation = new int[SPECS.MAX_ID+1];
 			Arrays.fill(structureLocation, Vector.INVALID);
 			castles = new LinkedList<>();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
 				if (karboniteMap[j][i]) {
-					karboniteLocs.add(Vector.makeMapLocation(i, j));
+					int loc = Vector.makeMapLocation(i, j);
+					karboniteLocs.add(loc);
 					pilgrimAtKarbonite.add(false);
+					// Doesn't retain centroid information for now.
+					if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc, myLoc);
 				}
 				if (fuelMap[j][i]) {
-					fuelLocs.add(Vector.makeMapLocation(i, j));
+					int loc = Vector.makeMapLocation(i, j);
+					fuelLocs.add(loc);
 					pilgrimAtFuel.add(false);
+					// Doesn't retain centroid information for now.
+					if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc, myLoc);
 				}
 			}
 			karboniteLocs.sort(new Vector.SortByDistance(myLoc));
@@ -1004,20 +1016,45 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private BuildAction tryToCreatePilgrimForResource(LinkedList<Integer> locations, LinkedList<Boolean> pilgrimAt, LinkedList<Boolean> own, boolean requestFarmHalf) {
 			BuildAction myAction = null;
+
+			int minAssigned = 420420420;
+			for (int i = 0; i < locations.size(); i++) {
+				// If we don't know where castles are, only try the resources in the
+				// closest cluster, or we screw up on maps like 420
+				if (me.turn <= 3 &&
+					ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+					continue;
+				}
+
+				if (own.get(i) && !pilgrimAt.get(i)) {
+					if (Vector.distanceSquared(locations.get(i), myLoc) <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
+						minAssigned = Math.min(minAssigned, pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))]);
+					}
+				}
+			}
+
 			for (int ind = 0; ind < locations.size(); ind++) {
 				int i = ind;
-
 				// If we're past the threshold, occupy from further away
 				if (me.turn > OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
 					i = locations.size() - ind - 1;
 				}
 
-				if (own.get(i) && !pilgrimAt.get(i)) {
+				// If we don't know where castles are, only try the resources in the
+				// closest cluster, or we screw up on maps like 420
+				if (me.turn <= 3 &&
+					ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+					continue;
+				}
+
+				if (own.get(i) && !pilgrimAt.get(i)
+					&& (pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))] == minAssigned)) {
 					if (Vector.distanceSquared(locations.get(i), myLoc) <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
 						int dir = selectDirectionTowardsLocation(locations.get(i));
 						if (dir != Vector.INVALID) {
 							myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
 							pilgrimAt.set(i, true);
+							pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))]++;
 							if (requestFarmHalf) {
 								sendFarmHalfLoc(locations.get(i));
 							} else {
@@ -1028,6 +1065,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
+
 			return myAction;
 		}
 	}
@@ -1078,7 +1116,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				farmHalfQty = 0;
 			}
 
-			churchLoc = ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, assignedLoc, myLoc);
+			churchLoc = ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, assignedLoc, myHome);
 			churchBuilt = false;
 
 			if (Vector.distanceSquared(churchLoc, myHome) <= 25) {

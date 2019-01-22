@@ -70,6 +70,15 @@ class ResourceClusterSolver {
 		return val;
 	}
 
+	static boolean isAssigned(int myLoc) {
+		return visited != null && Vector.get(myLoc, visited) != 0;
+	}
+
+	static int assignedCluster(int myLoc) {
+		if (visited == null) return 0;
+		return Vector.get(myLoc, visited);
+	}
+
 	static int determineCentroid(boolean[][] map, boolean[][] arr1, boolean[][] arr2, int location, int myLoc) {
 		if (visited == null) {
 			initialise();
