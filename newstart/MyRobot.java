@@ -644,7 +644,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
 				int loc = Vector.makeMapLocation(Vector.getX(myLoc)+i, Vector.getY(myLoc)+j);
-				if (loc != Vector.INVALID && Vector.distanceSquared(myLoc, loc) <= SPECS.UNITS[me.unit].VISION_RADIUS) {
+				if (loc != Vector.INVALID && Vector.distanceSquared(myLoc, loc) <= SPECS.UNITS[me.unit].VISION_RADIUS && (i != 0 || j != 0)) {
 					if ((Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc))%2 == 0) {
 						if (Vector.get(loc, map) && !Vector.get(loc, karboniteMap) && !Vector.get(loc, fuelMap)) {
 							availableTurtles.add(loc);
@@ -886,6 +886,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		int[] structureLocation;
 		LinkedList<Integer> castles;
 
+		private static final int NO_UNIT = -1;
+		private final int CASTLE = SPECS.CASTLE;
+		private final int CHURCH = SPECS.CHURCH;
+		private final int PILGRIM = SPECS.PILGRIM;
+		private static final int ARMED_UNIT = 420;
+		int[] assignedUnitLocations;
+		int[] unitType;
+
 		BoardSymmetryType symmetryStatus;
 
 		CastleController() {
@@ -902,7 +910,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			pilgrimsAtCluster = new int[MAX_CLUSTERS+1];
 
 			structureLocation = new int[SPECS.MAX_ID+1];
+			assignedUnitLocations = new int[SPECS.MAX_ID+1];
+			unitType = new int[SPECS.MAX_ID+1];
 			Arrays.fill(structureLocation, Vector.INVALID);
+			Arrays.fill(assignedUnitLocations, Vector.INVALID);
+			Arrays.fill(unitType, NO_UNIT);
 			castles = new LinkedList<>();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
@@ -931,7 +943,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		Action runSpecificTurn() {
 
 			sendStructureLocation();
-			readStructureLocations();
+			readUnitLocations();
 			checkTurtleWelfare();
 			checkCastlesWelfare();
 			checkResourceDepotOwnership(karboniteLocs, ownKarbonite);
@@ -966,7 +978,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			// TODO
 		}
 
-		private void readStructureLocations() {
+		private void readUnitLocations() {
 			for (Robot r: visibleRobots) {
 				if (r.team == me.team) {
 					int what = communications.readCastle(r);
@@ -977,7 +989,21 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							structureLocation[r.id] = Vector.makeMapLocation(Vector.getX(structureLocation[r.id]), what & 0x3f);
 							// Only mark it as a castle once full location is received
 							if (me.turn <= 3) {
+								unitType[r.id] = CASTLE;
 								castles.add(r.id);
+							} else {
+								unitType[r.id] = CHURCH;
+							}
+						}
+					} else if ((what & 0xc0) == (Communicator.PILGRIM & 0xc0) || (what & 0xc0) == (Communicator.ARMED & 0xc0)) {
+						if (assignedUnitLocations[r.id] == Vector.INVALID && r.turn == 1) {
+							assignedUnitLocations[r.id] = Vector.makeMapLocation(what & 0x3f, 0);
+						} else if (r.turn == 2) {
+							assignedUnitLocations[r.id] = Vector.makeMapLocation(Vector.getX(assignedUnitLocations[r.id]), what & 0x3f);
+							if ((what & 0xc0) == (Communicator.PILGRIM & 0xc0)) {
+								unitType[r.id] = PILGRIM;
+							} else {
+								unitType[r.id] = ARMED_UNIT;
 							}
 						}
 					}
@@ -1128,6 +1154,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
+			sendMyAssignedLoc();
 			boolean wantChurch = false;
 
 			if (Vector.get(churchLoc, visibleRobotMap) != MAP_INVISIBLE) {
@@ -1230,6 +1257,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int fuelLimit() {
 			return SPECS.UNITS[me.unit].FUEL_CAPACITY;
 		}
+
+		protected void sendMyAssignedLoc() {
+			if (me.turn == 1) {
+				myCastleTalk = Vector.getX(assignedLoc) | Communicator.PILGRIM;
+			} else if (me.turn == 2) {
+				myCastleTalk = Vector.getY(assignedLoc) | Communicator.PILGRIM;
+			}
+		}
 	}
 
 	private class TurtlingRobotController extends MobileRobotController {
@@ -1246,6 +1281,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		Action runSpecificTurn() {
 
 			Action myAction = null;
+			sendMyAssignedLoc();
 
 			if (myAction == null) {
 				myAction = tryToAttack();
@@ -1272,6 +1308,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return myAction;
+		}
+
+		protected void sendMyAssignedLoc() {
+			if (me.turn == 1) {
+				myCastleTalk = Vector.getX(assignedLoc) | Communicator.ARMED;
+			} else if (me.turn == 2) {
+				myCastleTalk = Vector.getY(assignedLoc) | Communicator.ARMED;
+			}
 		}
 	}
 }
