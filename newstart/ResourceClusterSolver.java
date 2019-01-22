@@ -1,6 +1,6 @@
 package bc19;
 
-import java.util.ArrayList;
+import java.util.LinkedList;
 
 /**
  * A utility for determining what the resource clusters look like
@@ -14,7 +14,7 @@ class ResourceClusterSolver {
 
 	private static final int CLUSTER_DISTANCE = 13;
 
-	private static ArrayList<Integer> inCluster;
+	private static LinkedList<Integer> inCluster;
 	private static int currentClusterMinX;
 	private static int currentClusterMinY;
 	private static int currentClusterMaxX;
@@ -24,7 +24,7 @@ class ResourceClusterSolver {
 	private static int clusterId;
 
 	private static void initialise() {
-		inCluster = new ArrayList<>();
+		inCluster = new LinkedList<>();
 		visited = new int[MyRobot.boardSize][MyRobot.boardSize];
 	}
 

@@ -521,23 +521,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		return unit == SPECS.CASTLE || unit == SPECS.CRUSADER || unit == SPECS.PROPHET || unit == SPECS.PREACHER;
 	}
 
-	private boolean canAffordToBuild(int unit, boolean urgent) {
-		if (fuel < SPECS.UNITS[unit].CONSTRUCTION_FUEL) {
-			return false;
-		}
-		if (urgent) {
-			return karbonite >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
-		}
-		return karbonite-karboniteReserve() >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
-	}
-
-	private int karboniteReserve() {
-		if (me.turn < SPECS.MAX_ROUNDS-10) {
-			return 60;
-		}
-		return 0;
-	}
-
 	//////// Specific robot controllers ////////
 
 	private abstract class SpecificRobotController {
@@ -564,12 +547,61 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		abstract Action runSpecificTurn();
+
+		/**
+		 * Selects one of the eight cardinal directions to go to the location
+		 * @return An occupiable cardinal direction, or Vector.INVALID if none exists
+		 */
+		protected int selectDirectionTowardsLocation(int targetLoc) {
+			int bestDir = Vector.INVALID;
+			for (int d: dirs) {
+				int location = Vector.add(myLoc, d);
+				if (isOccupiable(location)) {
+					if (bestDir == Vector.INVALID ||
+						Vector.distanceSquared(targetLoc, location) < Vector.distanceSquared(targetLoc, myLoc+bestDir)) {
+
+						bestDir = d;
+					}
+				}
+			}
+			return bestDir;
+		}
+
+		protected boolean canAffordToBuild(int unit, boolean urgent) {
+			if (fuel < SPECS.UNITS[unit].CONSTRUCTION_FUEL) {
+				return false;
+			}
+			if (urgent) {
+				return karbonite >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
+			}
+			return karbonite-karboniteReserve() >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
+		}
+
+		protected int karboniteReserve() {
+			if (me.turn < SPECS.MAX_ROUNDS-10) {
+				return 60;
+			}
+			return 0;
+		}
 	}
 
 	private abstract class StructureController extends SpecificRobotController {
 
+		LinkedList<Integer> availableTurtles;
+
 		StructureController() {
 			super();
+
+			availableTurtles = new LinkedList<>();
+			int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
+			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+				int loc = Vector.makeMapLocation(Vector.getX(myLoc)+i, Vector.getY(myLoc)+j);
+				if (loc != Vector.INVALID && Vector.distanceSquared(myLoc, loc) <= SPECS.UNITS[me.unit].VISION_RADIUS) {
+					if (Vector.get(loc, map) && !Vector.get(loc, karboniteMap) && !Vector.get(loc, fuelMap)) {
+						availableTurtles.add(loc);
+					}
+				}
+			}
 		}
 
 		protected void sendStructureLocation() {
@@ -578,6 +610,64 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (me.turn == 2) {
 				myCastleTalk = me.y | Communicator.STRUCTURE;
 			}
+		}
+
+		protected BuildAction buildInResponseToNearbyEnemies() {
+			int[] friendlyUnits = new int[6];
+			int[] enemyUnits = new int[6];
+			int closestEnemy = Vector.INVALID;
+
+			for (Robot r: visibleRobots) {
+				if (isVisible(r)) {
+					if (r.team == me.team) {
+						friendlyUnits[r.unit]++;
+					} else {
+						enemyUnits[r.unit]++;
+						int theirLoc = Vector.makeMapLocation(r.x, r.y);
+						if (closestEnemy == Vector.INVALID ||
+							Vector.distanceSquared(myLoc, theirLoc) < Vector.distanceSquared(myLoc, closestEnemy)) {
+							closestEnemy = theirLoc;
+						}
+					}
+				}
+			}
+
+			int toBuild = -1;
+			if (enemyUnits[SPECS.PREACHER] > friendlyUnits[SPECS.PREACHER] && canAffordToBuild(SPECS.PREACHER, true)) {
+				toBuild = SPECS.PREACHER;
+			} else if (enemyUnits[SPECS.PROPHET] > friendlyUnits[SPECS.PROPHET] && canAffordToBuild(SPECS.PROPHET, true)) {
+				toBuild = SPECS.PROPHET;
+			} else if (enemyUnits[SPECS.CASTLE]+enemyUnits[SPECS.CHURCH]+enemyUnits[SPECS.PILGRIM]+enemyUnits[SPECS.CRUSADER] > friendlyUnits[SPECS.CRUSADER] && canAffordToBuild(SPECS.CRUSADER, true)) {
+				toBuild = SPECS.CRUSADER;
+			}
+
+			BuildAction myAction = null;
+
+			if (toBuild != -1 && closestEnemy != Vector.INVALID) {
+				int dir = selectDirectionTowardsLocation(closestEnemy);
+				myAction = buildUnit(toBuild, Vector.getX(dir), Vector.getY(dir));
+				communications.sendAssignedLoc(pollClosestTurtleLocation(myLoc+dir));
+			}
+
+			return myAction;
+		}
+
+		int pollClosestTurtleLocation(int targetLoc) {
+			if (availableTurtles.isEmpty()) {
+				return Vector.INVALID;
+			}
+			int bestIdx = 0;
+			for (int i = 1; i < availableTurtles.size(); i++) {
+				if (Vector.distanceSquared(targetLoc, availableTurtles.get(i)) < Vector.distanceSquared(targetLoc, availableTurtles.get(bestIdx))) {
+					bestIdx = i;
+				}
+			}
+			int bestDir = availableTurtles.get(bestIdx);
+			for (int i = bestIdx+1; i < availableTurtles.size(); i++) {
+				availableTurtles.set(i-1, availableTurtles.get(i));
+			}
+			availableTurtles.pollLast();
+			return bestDir;
 		}
 	}
 
@@ -600,33 +690,33 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class CastleController extends StructureController {
 
-		ArrayList<Integer> karboniteLocs;
-		ArrayList<Boolean> pilgrimAtKarbonite;
-		ArrayList<Boolean> ownKarbonite;
+		LinkedList<Integer> karboniteLocs;
+		LinkedList<Boolean> pilgrimAtKarbonite;
+		LinkedList<Boolean> ownKarbonite;
 
-		ArrayList<Integer> fuelLocs;
-		ArrayList<Boolean> pilgrimAtFuel;
-		ArrayList<Boolean> ownFuel;
+		LinkedList<Integer> fuelLocs;
+		LinkedList<Boolean> pilgrimAtFuel;
+		LinkedList<Boolean> ownFuel;
 
 		int[] structureLocation;
-		ArrayList<Integer> castles;
+		LinkedList<Integer> castles;
 
 		BoardSymmetryType symmetryStatus;
 
 		CastleController() {
 			super();
 
-			karboniteLocs = new ArrayList<>();
-			pilgrimAtKarbonite = new ArrayList<>();
-			ownKarbonite = new ArrayList<>();
+			karboniteLocs = new LinkedList<>();
+			pilgrimAtKarbonite = new LinkedList<>();
+			ownKarbonite = new LinkedList<>();
 
-			fuelLocs = new ArrayList<>();
-			pilgrimAtFuel = new ArrayList<>();
-			ownFuel = new ArrayList<>();
+			fuelLocs = new LinkedList<>();
+			pilgrimAtFuel = new LinkedList<>();
+			ownFuel = new LinkedList<>();
 
 			structureLocation = new int[SPECS.MAX_ID+1];
 			Arrays.fill(structureLocation, Vector.INVALID);
-			castles = new ArrayList<>();
+			castles = new LinkedList<>();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
 				if (karboniteMap[j][i]) {
@@ -654,6 +744,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			checkResourceDepotOwnership(fuelLocs, ownFuel);
 
 			Action myAction = null;
+
+			if (myAction == null) {
+				myAction = buildInResponseToNearbyEnemies();
+			}
 
 			if (myAction == null && canAffordToBuild(SPECS.PILGRIM, false)) {
 				myAction = tryToCreatePilgrim();
@@ -685,7 +779,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
-		private void checkResourceDepotOwnership(ArrayList<Integer> locations, ArrayList<Boolean> own) {
+		private void checkResourceDepotOwnership(LinkedList<Integer> locations, LinkedList<Boolean> own) {
 			for (int i = 0; i < locations.size(); i++) {
 				own.set(i, true);
 				int myDist = Vector.distanceSquared(myLoc, locations.get(i));
@@ -697,25 +791,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
-		}
-
-		/**
-		 * Selects one of the eight cardinal directions to go to the location
-		 * @return An occupiable cardinal direction, or Vector.INVALID if none exists
-		 */
-		private int selectDirectionTowardsLocation(int targetLoc) {
-			int bestDir = Vector.INVALID;
-			for (int d: dirs) {
-				int location = Vector.add(myLoc, d);
-				if (isOccupiable(location)) {
-					if (bestDir == Vector.INVALID ||
-						Vector.distanceSquared(targetLoc, location) < Vector.distanceSquared(targetLoc, myLoc+bestDir)) {
-
-						bestDir = d;
-					}
-				}
-			}
-			return bestDir;
 		}
 
 		private BuildAction tryToCreatePilgrim() {
@@ -733,7 +808,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private BuildAction tryToCreatePilgrimForResource(ArrayList<Integer> locations, ArrayList<Boolean> pilgrimAt, ArrayList<Boolean> own, boolean requestFarmHalf) {
+		private BuildAction tryToCreatePilgrimForResource(LinkedList<Integer> locations, LinkedList<Boolean> pilgrimAt, LinkedList<Boolean> own, boolean requestFarmHalf) {
 			BuildAction myAction = null;
 			for (int i = 0; i < locations.size(); i++) {
 				if (own.get(i) && !pilgrimAt.get(i)) {
@@ -764,7 +839,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		@Override
 		Action runSpecificTurn() {
-			return null;
+
+			sendStructureLocation();
+
+			Action myAction = null;
+
+			if (myAction == null) {
+				myAction = buildInResponseToNearbyEnemies();
+			}
+
+			return myAction;
 		}
 	}
 
