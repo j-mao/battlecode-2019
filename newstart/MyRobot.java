@@ -77,11 +77,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		} else if (me.unit == SPECS.PILGRIM) {
 			mySpecificRobotController = new PilgrimController();
 		} else if (me.unit == SPECS.CRUSADER) {
-			mySpecificRobotController = null;
+			mySpecificRobotController = new TurtlingRobotController();
 		} else if (me.unit == SPECS.PROPHET) {
-			mySpecificRobotController = new TurtlingProphetController();
+			mySpecificRobotController = new TurtlingRobotController();
 		} else if (me.unit == SPECS.PREACHER) {
-			mySpecificRobotController = null;
+			mySpecificRobotController = new TurtlingRobotController();
 		} else {
 			log("Error: I do not know what I am");
 		}
@@ -89,38 +89,42 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private void noteAttackedSquares() {
 		for (Robot r: visibleRobots) {
-			if (isVisible(r) && r.team != me.team && isArmed(r.unit)) {
+			if (isVisible(r) && r.team != me.team) {
 				int location = Vector.makeMapLocation(r.x, r.y);
-				int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[r.unit].ATTACK_RADIUS[1]));
-				for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
-					int dir = Vector.makeDirection(i, j);
-					int targetLoc = Vector.add(location, dir);
-					if (targetLoc != Vector.INVALID && Vector.magnitude(dir) <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]) {
+				if (isArmed(r.unit)) {
+					int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[r.unit].ATTACK_RADIUS[1]));
+					for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+						int dir = Vector.makeDirection(i, j);
+						int targetLoc = Vector.add(location, dir);
+						if (targetLoc != Vector.INVALID && Vector.magnitude(dir) <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]) {
 
-						boolean isDirectTarget = Vector.magnitude(dir) >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0];
+							boolean isDirectTarget = Vector.magnitude(dir) >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0];
 
-						// Offset for being potentially attacked
-						int offset = 2;
-						if (r.unit == SPECS.CASTLE) {
-							offset = 0;
-						} else if (r.unit == SPECS.PREACHER) {
-							offset = 3; // AoE
-						}
+							// Offset for being potentially attacked
+							int offset = 2;
+							if (r.unit == SPECS.CASTLE) {
+								offset = 0;
+							} else if (r.unit == SPECS.PREACHER) {
+								offset = 3; // AoE
+							}
 
-						for (int dx = -offset; dx <= offset; dx++) {
-							for (int dy = Math.abs(dx)-offset; dy <= offset-Math.abs(dx); dy++) {
-								int affectedLoc = Vector.add(targetLoc, Vector.makeDirection(dx, dy));
-								if (affectedLoc != Vector.INVALID) {
-									Vector.set(affectedLoc, mayBecomeAttacked, me.turn);
-									if (isDirectTarget &&
-										Vector.distanceSquared(targetLoc, affectedLoc) <= SPECS.UNITS[r.unit].DAMAGE_SPREAD) {
+							for (int dx = -offset; dx <= offset; dx++) {
+								for (int dy = Math.abs(dx)-offset; dy <= offset-Math.abs(dx); dy++) {
+									int affectLoc = Vector.add(targetLoc, Vector.makeDirection(dx, dy));
+									if (affectLoc != Vector.INVALID) {
+										Vector.set(affectLoc, mayBecomeAttacked, me.turn);
+										if (isDirectTarget &&
+											Vector.distanceSquared(targetLoc, affectLoc) <= SPECS.UNITS[r.unit].DAMAGE_SPREAD) {
 
-										Vector.set(affectedLoc, isAttacked, me.turn);
+											Vector.set(affectLoc, isAttacked, me.turn);
+										}
 									}
 								}
 							}
 						}
 					}
+				} else {
+					Vector.set(location, isAttacked, me.turn);
 				}
 			}
 		}
@@ -597,8 +601,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
 				int loc = Vector.makeMapLocation(Vector.getX(myLoc)+i, Vector.getY(myLoc)+j);
 				if (loc != Vector.INVALID && Vector.distanceSquared(myLoc, loc) <= SPECS.UNITS[me.unit].VISION_RADIUS) {
-					if (Vector.get(loc, map) && !Vector.get(loc, karboniteMap) && !Vector.get(loc, fuelMap)) {
-						availableTurtles.add(loc);
+					if ((Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc))%2 == 0) {
+						if (Vector.get(loc, map) && !Vector.get(loc, karboniteMap) && !Vector.get(loc, fuelMap)) {
+							availableTurtles.add(loc);
+						}
 					}
 				}
 			}
@@ -645,6 +651,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (toBuild != -1 && closestEnemy != Vector.INVALID) {
 				int dir = selectDirectionTowardsLocation(closestEnemy);
+				if (dir == Vector.INVALID) {
+					return null;
+				}
 				myAction = buildUnit(toBuild, Vector.getX(dir), Vector.getY(dir));
 				communications.sendAssignedLoc(pollClosestTurtleLocation(myLoc+dir));
 			}
@@ -685,6 +694,117 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					myHome = location;
 				}
 			}
+		}
+
+		private int attackPriority(int unitType) {
+			if (unitType == SPECS.CASTLE) {
+				return 800;
+			} else if (unitType == SPECS.CHURCH) {
+				return 200;
+			} else if (unitType == SPECS.PILGRIM) {
+				return 200;
+			} else if (unitType == SPECS.CRUSADER) {
+				return 600;
+			} else if (unitType == SPECS.PROPHET) {
+				return 400;
+			} else if (unitType == SPECS.PREACHER) {
+				return 1000;
+			} else {
+				return 0;
+			}
+		}
+
+		private int getAttackValue(int targetLoc) {
+			if (me.unit != SPECS.PREACHER) {
+				Robot what = getRobot(Vector.get(targetLoc, visibleRobotMap));
+				if (what == null || what.team == me.team) {
+					return Integer.MIN_VALUE;
+				}
+				return attackPriority(what.unit);
+			}
+
+			boolean useful = false;
+			int value = 0;
+			for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) {
+				int affectLoc = Vector.add(targetLoc, Vector.makeDirection(i, j));
+				if (affectLoc != Vector.INVALID) {
+					int visibleState = Vector.get(affectLoc, visibleRobotMap);
+					if (visibleState != MAP_EMPTY) {
+						if (visibleState != MAP_INVISIBLE) {
+							Robot what = getRobot(visibleState);
+							if (what.team == me.team) {
+								value -= attackPriority(what.unit);
+							} else {
+								value += attackPriority(what.unit);
+								useful = true;
+							}
+						} else {
+							/*KnownStructureType what = get(affectLoc, knownStructures);
+							if (what != null) {
+								switch (what) {
+									case OUR_CASTLE:   value -= attackPriority(SPECS.CASTLE); break;
+									case OUR_CHURCH:   value -= attackPriority(SPECS.CHURCH); break;
+									case ENEMY_CASTLE: value += attackPriority(SPECS.CASTLE); useful = true; break;
+									case ENEMY_CHURCH: value += attackPriority(SPECS.CHURCH); useful = true; break;
+								}
+							} else {
+								// Speculate. Maybe we could gain out of this.
+								value++;
+							}*/
+							value++;
+						}
+					}
+				}
+			}
+			if (useful) {
+				return value;
+			}
+			return Integer.MIN_VALUE;
+		}
+
+		protected AttackAction tryToAttack() {
+
+			if (fuel < SPECS.UNITS[me.unit].ATTACK_FUEL_COST) {
+				return null;
+			}
+
+			int bestValue = Integer.MIN_VALUE;
+			int bestLoc = Vector.INVALID;
+
+			int maxDispl = (int)Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].ATTACK_RADIUS[1]));
+			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
+				int dir = Vector.makeDirection(i, j);
+				if (Vector.magnitude(dir) >= SPECS.UNITS[me.unit].ATTACK_RADIUS[0] &&
+					Vector.magnitude(dir) <= SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) {
+
+					int location = Vector.add(myLoc, dir);
+					if (location != Vector.INVALID) {
+						int altValue = getAttackValue(location);
+						if (altValue > bestValue) {
+							bestValue = altValue;
+							bestLoc = location;
+						}
+					}
+				}
+			}
+
+			if (bestLoc != Vector.INVALID) {
+				/*
+				for (int i = -1; i <= 1; i++) {
+					for (int j = -1; j <= 1; j++) {
+						if (i*i+j*j <= SPECS.UNITS[me.unit].DAMAGE_SPREAD) {
+							int location = Vector.add(bestLoc, Vector.makeDirection(i, j));
+							if (location != Vector.INVALID) {
+								Vector.set(location, damageDoneToSquare, Vector.get(location, damageDoneToSquare) + SPECS.UNITS[me.unit].ATTACK_DAMAGE);
+							}
+						}
+					}
+				}
+				*/
+				return attack(Vector.getX(bestLoc-myLoc), Vector.getY(bestLoc-myLoc));
+			}
+
+			return null;
 		}
 	}
 
@@ -986,15 +1106,46 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
-	private class TurtlingProphetController extends MobileRobotController {
+	private class TurtlingRobotController extends MobileRobotController {
 
-		TurtlingProphetController() {
+		private int assignedLoc;
+
+		TurtlingRobotController() {
 			super();
+
+			assignedLoc = communications.readAssignedLoc();
 		}
 
 		@Override
 		Action runSpecificTurn() {
-			return null;
+
+			Action myAction = null;
+
+			if (myAction == null) {
+				myAction = tryToAttack();
+			}
+
+			if (myAction == null) {
+				int dir = myBfsSolver.nextStep();
+				int newLoc = Vector.add(myLoc, dir);
+				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
+					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
+						(location) -> {
+							return location == assignedLoc;
+						},
+						(location) -> {
+							return isOccupiable(location) || location == assignedLoc;
+						}
+					);
+					dir = myBfsSolver.nextStep();
+					newLoc = Vector.add(myLoc, dir);
+				}
+				if (dir != Vector.INVALID && isOccupiable(newLoc)) {
+					myAction = move(Vector.getX(dir), Vector.getY(dir));
+				}
+			}
+
+			return myAction;
 		}
 	}
 }
