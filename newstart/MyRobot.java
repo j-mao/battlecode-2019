@@ -19,8 +19,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Map parsing constants
 	private static final int MAP_EMPTY = 0;
 	private static final int MAP_INVISIBLE = -1;
-	private static final boolean MAP_PASSABLE = true;
-	private static final boolean MAP_IMPASSABLE = false;
 
 	// Map metadata
 	static int boardSize;
@@ -588,11 +586,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			private TreeMap<Integer, Integer> assignments;
 			private int previousAssignment;
 			private LinkedList<Integer> relievedLocs;
+			private int[] incompleteData;
 
 			UnitWelfareChecker() {
 				assignments = new TreeMap<>();
 				previousAssignment = Vector.INVALID;
 				relievedLocs = new LinkedList<>();
+				incompleteData = new int[SPECS.MAX_ID+1];
+
+				Arrays.fill(incompleteData, -1);
 
 				for (Robot r: visibleRobots) {
 					if (isVisible(r) && r.team == me.team) {
@@ -601,8 +603,21 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			void recordLocation(int location) {
+			void recordNewAssignment(int location) {
 				previousAssignment = location;
+			}
+
+			void recordCoordinate(int id, int cor) {
+				if (incompleteData[id] == -1) {
+					incompleteData[id] = cor;
+				} else {
+					assignments.put(id, Vector.makeMapLocation(incompleteData[id], cor));
+					incompleteData[id] = -1;
+				}
+			}
+
+			int getAssignment(int id) {
+				return assignments.get(id);
 			}
 
 			/**
@@ -668,12 +683,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		protected void sendFarmHalfLoc(int location) {
 			communications.sendRadio(Vector.compress(location) | Communicator.FARM_HALF, 2);
-			myUnitWelfareChecker.recordLocation(location);
+			myUnitWelfareChecker.recordNewAssignment(location);
 		}
 
 		protected void sendAssignedLoc(int location) {
 			communications.sendRadio(Vector.compress(location) | Communicator.ASSIGN, 2);
-			myUnitWelfareChecker.recordLocation(location);
+			myUnitWelfareChecker.recordNewAssignment(location);
 		}
 
 		protected BuildAction buildInResponseToNearbyEnemies() {
@@ -868,9 +883,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class CastleController extends StructureController {
 
-		// The last turn number before you start attempting to
-		// colonise resources that are far away from you, instead
-		// of close to you
+		/**
+		 * The last turn number before you start attempting to colonise resources
+		 * that are far away from you, instead of close to you
+		 */
 		private static final int OCCUPY_FARAWAY_RESOURCE_THRESHOLD = 3;
 
 		private static final int MAX_CLUSTERS = 32;
@@ -885,15 +901,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		int[] pilgrimsAtCluster;
 
-		int[] structureLocation;
 		LinkedList<Integer> castles;
 
 		private static final int NO_UNIT = -1;
-		private final int CASTLE = SPECS.CASTLE;
-		private final int CHURCH = SPECS.CHURCH;
-		private final int PILGRIM = SPECS.PILGRIM;
 		private static final int ARMED_UNIT = 420;
-		int[] assignedUnitLocations;
 		int[] unitType;
 
 		BoardSymmetryType symmetryStatus;
@@ -911,11 +922,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			pilgrimsAtCluster = new int[MAX_CLUSTERS+1];
 
-			structureLocation = new int[SPECS.MAX_ID+1];
-			assignedUnitLocations = new int[SPECS.MAX_ID+1];
 			unitType = new int[SPECS.MAX_ID+1];
-			Arrays.fill(structureLocation, Vector.INVALID);
-			Arrays.fill(assignedUnitLocations, Vector.INVALID);
 			Arrays.fill(unitType, NO_UNIT);
 			castles = new LinkedList<>();
 
@@ -982,30 +989,32 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private void readUnitLocations() {
 			for (Robot r: visibleRobots) {
-				if (r.team == me.team) {
+				if (r.team == me.team && r.turn <= 2) {
 					int what = communications.readCastle(r);
-					if ((what & 0xc0) == (Communicator.STRUCTURE & 0xc0)) {
-						if (structureLocation[r.id] == Vector.INVALID && r.turn == 1) {
-							structureLocation[r.id] = Vector.makeMapLocation(what & 0x3f, 0);
-						} else if (r.turn == 2) {
-							structureLocation[r.id] = Vector.makeMapLocation(Vector.getX(structureLocation[r.id]), what & 0x3f);
-							// Only mark it as a castle once full location is received
+					int unit = NO_UNIT;
+					switch (what & 0xc0) {
+						case Communicator.STRUCTURE:
 							if (me.turn <= 3) {
-								unitType[r.id] = CASTLE;
-								castles.add(r.id);
+								unit = SPECS.CASTLE;
 							} else {
-								unitType[r.id] = CHURCH;
+								unit = SPECS.CHURCH;
 							}
-						}
-					} else if ((what & 0xc0) == (Communicator.PILGRIM & 0xc0) || (what & 0xc0) == (Communicator.ARMED & 0xc0)) {
-						if (assignedUnitLocations[r.id] == Vector.INVALID && r.turn == 1) {
-							assignedUnitLocations[r.id] = Vector.makeMapLocation(what & 0x3f, 0);
-						} else if (r.turn == 2) {
-							assignedUnitLocations[r.id] = Vector.makeMapLocation(Vector.getX(assignedUnitLocations[r.id]), what & 0x3f);
-							if ((what & 0xc0) == (Communicator.PILGRIM & 0xc0)) {
-								unitType[r.id] = PILGRIM;
-							} else {
-								unitType[r.id] = ARMED_UNIT;
+							break;
+						case Communicator.PILGRIM:
+							unit = SPECS.PILGRIM;
+							break;
+						case Communicator.ARMED:
+							unit = ARMED_UNIT;
+							break;
+					}
+					// Messages should be guaranteed to be valid, but just in case
+					if (unit != NO_UNIT) {
+						myUnitWelfareChecker.recordCoordinate(r.id, what & 0x3f);
+						// Only mark its unit type once full location is received
+						if (r.turn == 2) {
+							unitType[r.id] = unit;
+							if (unit == SPECS.CASTLE) {
+								castles.add(r.id);
 							}
 						}
 					}
@@ -1018,9 +1027,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				own.set(i, true);
 				int myDist = Vector.distanceSquared(myLoc, locations.get(i));
 				for (Integer castle: castles) {
-					if (Vector.distanceSquared(structureLocation[castle], locations.get(i)) < myDist) {
+					if (Vector.distanceSquared(myUnitWelfareChecker.getAssignment(castle), locations.get(i)) < myDist) {
 						own.set(i, false);
-					} else if (Vector.distanceSquared(structureLocation[castle], locations.get(i)) == myDist && castle < me.id) {
+					} else if (Vector.distanceSquared(myUnitWelfareChecker.getAssignment(castle), locations.get(i)) == myDist && castle < me.id) {
 						own.set(i, false);
 					}
 				}
@@ -1045,12 +1054,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private BuildAction tryToCreatePilgrimForResource(LinkedList<Integer> locations, LinkedList<Boolean> pilgrimAt, LinkedList<Boolean> own, boolean requestFarmHalf) {
 			BuildAction myAction = null;
 
-			int minAssigned = 420420420;
+			int minAssigned = Integer.MAX_VALUE;
 			for (int i = 0; i < locations.size(); i++) {
-				// If we don't know where castles are, only try the resources in the
-				// closest cluster, or we screw up on maps like 420
+				// If we don't know where castles are, only try the resources in the closest cluster
 				if (me.turn <= 3 &&
 					ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+
 					continue;
 				}
 
@@ -1279,12 +1288,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int dir = Vector.makeDirection(dx, dy);
 				if (Vector.magnitude(dir) <= SPECS.UNITS[me.unit].SPEED) {
 					int newLoc = Vector.add(myLoc, dir);
-					if (newLoc != Vector.INVALID && 
-						Vector.get(newLoc, map) == MAP_PASSABLE && 
-						Vector.get(newLoc, visibleRobotMap) == MAP_EMPTY) {
-						if (Vector.get(newLoc, isAttacked) != me.turn) {
-							return move(dx, dy);
-						}
+					if (isOccupiable(newLoc) && Vector.get(newLoc, isAttacked) != me.turn) {
+						return move(dx, dy);
 					}
 				}
 			}
@@ -1335,7 +1340,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		protected void sendMyAssignedLoc() {
+		private void sendMyAssignedLoc() {
 			if (me.turn == 1) {
 				myCastleTalk = Vector.getX(assignedLoc) | Communicator.ARMED;
 			} else if (me.turn == 2) {
