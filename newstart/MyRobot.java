@@ -810,6 +810,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class CastleController extends StructureController {
 
+		// The last turn number before you start attempting to
+		// colonise resources that are far away from you, instead
+		// of close to you
+		private static final int OCCUPY_FARAWAY_RESOURCE_THRESHOLD = 3;
+
 		LinkedList<Integer> karboniteLocs;
 		LinkedList<Boolean> pilgrimAtKarbonite;
 		LinkedList<Boolean> ownKarbonite;
@@ -930,7 +935,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private BuildAction tryToCreatePilgrimForResource(LinkedList<Integer> locations, LinkedList<Boolean> pilgrimAt, LinkedList<Boolean> own, boolean requestFarmHalf) {
 			BuildAction myAction = null;
-			for (int i = 0; i < locations.size(); i++) {
+			for (int ind = 0; ind < locations.size(); ind++) {
+				int i = ind;
+
+				// If we're past the threshold, occupy from further away
+				if (me.turn > OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
+					i = locations.size() - ind - 1;
+				}
+
 				if (own.get(i) && !pilgrimAt.get(i)) {
 					if (Vector.distanceSquared(locations.get(i), myLoc) <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
 						int dir = selectDirectionTowardsLocation(locations.get(i));
