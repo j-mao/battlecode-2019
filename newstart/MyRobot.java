@@ -19,6 +19,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	// Map parsing constants
 	private static final int MAP_EMPTY = 0;
 	private static final int MAP_INVISIBLE = -1;
+	private static final boolean MAP_PASSABLE = true;
+	private static final boolean MAP_IMPASSABLE = false;
 
 	// Map metadata
 	static int boardSize;
@@ -1176,6 +1178,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			Action myAction = null;
 
+			if (myAction == null && Vector.get(myLoc, isAttacked) == me.turn) {
+				// We are in a dangerous square
+				// We should probably move somewhere safe
+				myAction = moveSomewhereSafe();
+			}
+
 			if (myAction == null && wantChurch && Vector.isAdjacent(myLoc, churchLoc)) {
 				if (isOccupiable(churchLoc)) {
 					myAction = buildUnit(SPECS.CHURCH, Vector.getX(churchLoc-myLoc), Vector.getY(churchLoc-myLoc));
@@ -1258,12 +1266,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return SPECS.UNITS[me.unit].FUEL_CAPACITY;
 		}
 
-		protected void sendMyAssignedLoc() {
+		private void sendMyAssignedLoc() {
 			if (me.turn == 1) {
 				myCastleTalk = Vector.getX(assignedLoc) | Communicator.PILGRIM;
 			} else if (me.turn == 2) {
 				myCastleTalk = Vector.getY(assignedLoc) | Communicator.PILGRIM;
 			}
+		}
+
+		private Action moveSomewhereSafe() {
+			for (int dx = -2; dx <= 2; dx++) for (int dy = -2; dy <= 2; dy++) {
+				int dir = Vector.makeDirection(dx, dy);
+				if (Vector.magnitude(dir) <= SPECS.UNITS[me.unit].SPEED) {
+					int newLoc = Vector.add(myLoc, dir);
+					if (newLoc != Vector.INVALID && 
+						Vector.get(newLoc, map) == MAP_PASSABLE && 
+						Vector.get(newLoc, visibleRobotMap) == MAP_EMPTY) {
+						if (Vector.get(newLoc, isAttacked) != me.turn) {
+							return move(dx, dy);
+						}
+					}
+				}
+			}
+			return null; // Guess I'll just die?
 		}
 	}
 
