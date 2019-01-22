@@ -35,6 +35,7 @@ class Vector {
 	static int compress(int mapLoc) {
 		return ((mapLoc >> 8) << 6) | (mapLoc & 63);
 	}
+
 	static int makeDirection(int x, int y) {
 		return (x << 8) + y;
 	}
@@ -46,6 +47,10 @@ class Vector {
 		int x = getX(mapLoc) + getX(dir);
 		int y = getY(mapLoc) + getY(dir);
 		return makeMapLocation(x, y);
+	}
+
+	static boolean isAdjacent(int mapLocA, int mapLocB) {
+		return ((magnitude(mapLocB - mapLocA) + 1) >> 1) == 1;
 	}
 
 	static int distanceSquared(int mapLocA, int mapLocB) {

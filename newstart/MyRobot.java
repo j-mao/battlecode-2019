@@ -653,15 +653,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			checkResourceDepotOwnership(karboniteLocs, ownKarbonite);
 			checkResourceDepotOwnership(fuelLocs, ownFuel);
 
-			/*if (me.turn == 1) for (int i = 0; i < karboniteLocs.size(); i++) {
-				log("For loc at "+Vector.toString(karboniteLocs.get(i)));
-				if (ownKarbonite.get(i)) {
-					log("I own");
-				} else {
-					log("\t I dont own");
-				}
-			}*/
-
 			Action myAction = null;
 
 			if (myAction == null && canAffordToBuild(SPECS.PILGRIM, false)) {
@@ -781,6 +772,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int assignedLoc;
 		private int farmHalfQty;
+		private int churchLoc;
+		private boolean churchBuilt;
 
 		PilgrimController() {
 			super();
@@ -792,14 +785,47 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				assignedLoc = communications.readAssignedLoc();
 				farmHalfQty = 0;
 			}
+
+			churchLoc = ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, assignedLoc, myLoc);
+			churchBuilt = false;
+
+			if (Vector.distanceSquared(churchLoc, myHome) <= 25) {
+				churchLoc = myHome;
+				churchBuilt = true;
+			}
 		}
 
 		@Override
 		Action runSpecificTurn() {
 
+			boolean wantChurch = false;
+
+			if (Vector.get(churchLoc, visibleRobotMap) != MAP_INVISIBLE) {
+				if (isFriendlyStructureAtLoc(churchLoc)) {
+					churchBuilt = true;
+				} else {
+					churchBuilt = false;
+				}
+			}
+
+			if (!churchBuilt) {
+				if (enemyUnitVisible() && canAffordToBuild(SPECS.CHURCH, true)) {
+					wantChurch = true;
+				}
+				if (farmHalfQty == 0 && canAffordToBuild(SPECS.CHURCH, false)) {
+					wantChurch = true;
+				}
+			}
+
 			Action myAction = null;
 
-			if (myLoc == assignedLoc) {
+			if (myAction == null && wantChurch && Vector.isAdjacent(myLoc, churchLoc)) {
+				if (isOccupiable(churchLoc)) {
+					myAction = buildUnit(SPECS.CHURCH, Vector.getX(churchLoc-myLoc), Vector.getY(churchLoc-myLoc));
+				}
+			}
+
+			if (myAction == null && myLoc == assignedLoc) {
 				if (Vector.get(myLoc, karboniteMap) && me.karbonite < karboniteLimit()) {
 					myAction = mine();
 				}
@@ -808,14 +834,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			if (myAction == null &&
-				(me.karbonite >= karboniteLimit() || me.fuel >= fuelLimit()) &&
-				Vector.distanceSquared(myLoc, myHome) <= 2) {
+			if (myAction == null && (me.karbonite >= karboniteLimit() || me.fuel >= fuelLimit()) &&
+				churchBuilt && Vector.isAdjacent(myLoc, churchLoc)) {
+
+				myAction = give(Vector.getX(churchLoc-myLoc), Vector.getY(churchLoc-myLoc), me.karbonite, me.fuel);
+				farmHalfQty = Math.max(farmHalfQty - 1, 0);
+			}
+
+			if (myAction == null && (me.karbonite >= karboniteLimit() || me.fuel >= fuelLimit()) &&
+				Vector.isAdjacent(myLoc, myHome)) {
 
 				myAction = give(Vector.getX(myHome-myLoc), Vector.getY(myHome-myLoc), me.karbonite, me.fuel);
-				if (farmHalfQty > 0) {
-					farmHalfQty--;
-				}
+				farmHalfQty = Math.max(farmHalfQty - 1, 0);
 			}
 
 			if (myAction == null) {
@@ -824,16 +854,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (dir == Vector.INVALID || !isOccupiable(newLoc) || Vector.get(newLoc, isAttacked) == me.turn) {
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
 						(location) -> {
+							if (wantChurch) {
+								return Vector.isAdjacent(location, churchLoc);
+							}
 							if (me.karbonite < karboniteLimit() && me.fuel < fuelLimit()) {
 								return location == assignedLoc;
 							}
-							return Vector.distanceSquared(location, myHome) <= 2;
+							if (churchBuilt) {
+								return Vector.isAdjacent(location, churchLoc);
+							}
+							return Vector.isAdjacent(location, myHome);
 						},
 						(location) -> {
-							if (!isOccupiable(location)) {
-								return false;
-							}
-							return Vector.get(location, isAttacked) != me.turn || Vector.get(assignedLoc, isAttacked) == me.turn;
+							return isOccupiable(location) &&
+								(Vector.get(location, isAttacked) != me.turn || Vector.get(assignedLoc, isAttacked) == me.turn);
 						}
 					);
 					dir = myBfsSolver.nextStep();
@@ -845,6 +879,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return myAction;
+		}
+
+		private boolean enemyUnitVisible() {
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.team != me.team) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private int karboniteLimit() {
