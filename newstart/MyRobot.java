@@ -975,8 +975,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 
 			if (myAction == null && Vector.get(myLoc, isAttacked) == me.turn) {
-				// We are in a dangerous square
-				// We should probably move somewhere safe
 				myAction = moveSomewhereSafe();
 			}
 
@@ -1039,6 +1037,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			// If you're doing nothing (e.g. assigned square is dangerous) you may as well mine
+			if (myAction == null) {
+				if (Vector.get(myLoc, karboniteMap) && me.karbonite < karboniteLimit()) {
+					myAction = mine();
+				}
+				if (Vector.get(myLoc, fuelMap) && me.fuel < fuelLimit()) {
+					myAction = mine();
+				}
+			}
+
 			return myAction;
 		}
 
@@ -1070,7 +1078,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
-		private Action moveSomewhereSafe() {
+		private MoveAction moveSomewhereSafe() {
+			for (int dx = -2; dx <= 2; dx++) for (int dy = -2; dy <= 2; dy++) {
+				int dir = Vector.makeDirection(dx, dy);
+				if (Vector.magnitude(dir) <= SPECS.UNITS[me.unit].SPEED) {
+					int newLoc = Vector.add(myLoc, dir);
+					if (isOccupiable(newLoc) && Vector.get(newLoc, mayBecomeAttacked) != me.turn) {
+						return move(dx, dy);
+					}
+				}
+			}
 			for (int dx = -2; dx <= 2; dx++) for (int dy = -2; dy <= 2; dy++) {
 				int dir = Vector.makeDirection(dx, dy);
 				if (Vector.magnitude(dir) <= SPECS.UNITS[me.unit].SPEED) {
