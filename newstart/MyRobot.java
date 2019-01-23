@@ -496,6 +496,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
+		protected BuildAction tryToCreateProphet() {
+			int turtleLoc = pollClosestTurtleLocation(myLoc);
+			if (turtleLoc != Vector.INVALID) {
+				int buildDir = selectDirectionTowardsLocation(turtleLoc);
+				if (buildDir != Vector.INVALID) {
+					BuildAction myAction = buildUnit(SPECS.PROPHET, Vector.getX(buildDir), Vector.getY(buildDir));
+					sendAssignedLoc(turtleLoc);
+					return myAction;
+				}
+			}
+			return null;
+		}
+
 		protected int pollClosestTurtleLocation(int targetLoc) {
 			if (availableTurtles.isEmpty()) {
 				return Vector.INVALID;
@@ -729,6 +742,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToCreatePilgrim();
 			}
 
+			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false)) {
+				myAction = tryToCreateProphet();
+			}
+
 			return myAction;
 		}
 
@@ -897,6 +914,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				myAction = buildInResponseToNearbyEnemies();
+			}
+
+			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false)) {
+				myAction = tryToCreateProphet();
 			}
 
 			return myAction;
