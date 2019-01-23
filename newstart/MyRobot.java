@@ -353,9 +353,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			private int[] incompleteData;
 			private int[] unitType;
 			private int armedUnits;
+			private TreeMap<Integer, Integer> pilgrimLastGive;
+			private int numPilgrimsConstant; // = to total resources/2
 
 			UnitWelfareChecker() {
 				assignments = new TreeMap<>();
+				pilgrimLastGive = new TreeMap<>();
 				previousAssignment = Vector.INVALID;
 				relieved = new LinkedList<>();
 				incompleteData = new int[SPECS.MAX_ID+1];
@@ -372,6 +375,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (isArmed(r.unit)) {
 							armedUnits++;
 						}
+					}
+				}
+				numPilgrimsConstant = 0;
+				for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
+					int loc = Vector.makeMapLocation(i, j);
+					if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap)) {
+						numPilgrimsConstant++;
 					}
 				}
 			}
@@ -418,6 +428,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			 */
 			LinkedList<Integer> checkWelfare() {
 
+				checkPilgrimGiving();
 				// Observation: the new unit is the only never-before-seen unit in a radius of r^2 = 18
 				if (previousAssignment != Vector.INVALID) {
 					for (Robot r: visibleRobots) {
@@ -441,9 +452,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (getRobot(assignedUnit) == null) {
 						int whatLoc = assignments.get(assignedUnit);
 						assignments.remove(assignedUnit);
+						pilgrimLastGive.remove(assignedUnit);
 						if (isArmed(unitType[assignedUnit])) {
 							armedUnits--;
-						}
+						} 
 						unitType[assignedUnit] = NO_UNIT;
 						if (whatLoc != Vector.INVALID) {
 							relieved.add(whatLoc);
@@ -451,6 +463,24 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 				return relieved;
+			}
+
+			void checkPilgrimGiving() {
+				// If a pilgrim is next to us, assumed it gave to us
+				for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) {
+					int loc = Vector.add(myLoc, Vector.makeDirection(dx, dy));
+					if (loc != Vector.INVALID) {
+						Robot r = getRobot(Vector.get(loc, visibleRobotMap));
+						if (r != null && r.unit == SPECS.PILGRIM && r.team == me.team) {
+							pilgrimLastGive.put(r.id, me.turn);
+						}
+					}
+				}
+				for (Integer pilgrim: pilgrimLastGive.keySet()) {
+					if (getRobot(pilgrim) == null || pilgrimLastGive.get(pilgrim) <= me.turn - 30) {
+						pilgrimLastGive.remove(pilgrim);
+					} 
+				}
 			}
 
 			/**
@@ -482,6 +512,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			int numFriendlyArmedUnits() {
 				return armedUnits;
+			}
+
+			double proportionOfPilgrimsGivingToUs() {
+				return (double)pilgrimLastGive.size() / (double)numPilgrimsConstant;
 			}
 		}
 
@@ -621,6 +655,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			circleInitiated = false;
 			circleParticipants = myUnitWelfareChecker.purgeForCircleAttack();
 			return new NullAction();
+		}
+
+		protected boolean shouldBuildTurtlingUnit(int unit) {
+			double prob = 0.1 + myUnitWelfareChecker.proportionOfPilgrimsGivingToUs();
+			int amCanBuild = (karbonite-karboniteReserve())/SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
+			amCanBuild = Math.min(amCanBuild, fuel/SPECS.UNITS[unit].CONSTRUCTION_FUEL);
+			prob *= (double)amCanBuild;
+			if (prob > Math.random()) { // Using Math.random() because it gives between 0 and 1
+				return true;
+			} else {
+				return false;
+			}
 		}
 	}
 
@@ -850,7 +896,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = checkToInitiateCircle();
 			}
 
-			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false)) {
+			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
 				myAction = tryToCreateProphet();
 			}
 
@@ -863,9 +909,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int requiredUnitsForCircle() {
-			return 20 + (boardSize*boardSize)/64;
+			return 30 + (boardSize*boardSize)/64;
 		}
-		
+
 		private int fuelForCircle() {
 			return 4000 + 50 * requiredUnitsForCircle();
 		}
@@ -1099,7 +1145,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = buildInResponseToNearbyEnemies();
 			}
 
-			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false)) {
+			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
 				myAction = tryToCreateProphet();
 			}
 
