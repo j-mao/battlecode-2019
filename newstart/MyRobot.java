@@ -738,6 +738,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = buildInResponseToNearbyEnemies();
 			}
 
+			if (myAction == null) {
+				myAction = tryToAttack();
+			}
+
 			if (myAction == null && canAffordToBuild(SPECS.PILGRIM, false)) {
 				myAction = tryToCreatePilgrim();
 			}
@@ -755,6 +759,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				return false;
 			}
 			return (Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == 0;
+		}
+
+		private AttackAction tryToAttack() {
+			AttackAction res = null;
+			int cdps = 0, cdist = Integer.MAX_VALUE;
+			boolean cwithin = false;
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.team != me.team) {
+					int loc = Vector.makeMapLocation(r.x, r.y);
+					int dist = Vector.distanceSquared(myLoc, loc);
+					if (dist > SPECS.UNITS[me.unit].ATTACK_RADIUS[1]) continue;
+
+					int dps = 0;
+					boolean within = false;
+					if (isArmed(r.unit)) {
+						dps = SPECS.UNITS[r.unit].ATTACK_DAMAGE;
+						within = (dist >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0] && dist <= SPECS.UNITS[r.unit].ATTACK_RADIUS[1]);
+					}
+
+					if (r.unit == SPECS.CASTLE) {
+						dist = 0;
+					}
+
+					if (dps > cdps || (dps == cdps && ((within && !cwithin) || (within == cwithin && dist < cdist)))) {
+						res = attack(Vector.getX(loc-myLoc), Vector.getY(loc-myLoc));
+						cdps = dps; cwithin = within; cdist = dist;
+					}
+				}
+			}
+
+			return res;
 		}
 
 		private void checkUnitsWelfare() {
