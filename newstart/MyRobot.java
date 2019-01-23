@@ -461,7 +461,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 				relieved.clear();
 				for (Integer assignedUnit: assignments.keySet()) {
-					if (isArmed(unitType[assignedUnit])) {
+					if (isArmed(unitType[assignedUnit]) && unitType[assignedUnit] != SPECS.CASTLE) {
 						if (assignments.get(assignedUnit) != Vector.INVALID) {
 							availableTurtles.add(assignments.get(assignedUnit));
 						}
@@ -980,12 +980,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							castles.put(r.id, completeLocation);
 						}
 					}
-				}
-			}
-			for (Integer castle: castles.keySet()) {
-				if (getRobot(castle) == null) {
-					// RIP Castle
-					castles.remove(castle);
 				}
 			}
 		}
