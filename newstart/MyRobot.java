@@ -474,7 +474,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						 * will disavow any knowledge of your actions.
 						 * This tape will self-destruct in ten seconds. Good luck.
 						 */
-						assignments.remove(assignedUnit);
+						assignments.put(assignedUnit, Vector.INVALID);
 						unitType[assignedUnit] = NO_UNIT;
 						relieved.add(assignedUnit);
 					}
