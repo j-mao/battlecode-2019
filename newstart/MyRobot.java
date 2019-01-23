@@ -982,6 +982,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
+			for (Integer castle: castles.keySet()) {
+				if (getRobot(castle) == null) {
+					// RIP Castle
+					castles.remove(castle);
+				}
+			}
 		}
 
 		private void checkResourceDepotOwnership(LinkedList<Integer> locations, LinkedList<Boolean> own) {
