@@ -28,6 +28,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Game staging constants
 
+	// Miscellaneous constants
+	private static final int NO_UNIT = -1;
+	private static final int ARMED_UNIT = 420;
+
 	// Dangerous squares
 	private int[][] mayBecomeAttacked;
 	private int[][] isAttacked;
@@ -140,11 +144,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		static final int ATTACK = 0x3000;
 		static final int RADIUS = 0x4000;
 
+		// Constants for special radio broadcasts, must all be below 0x1000
+		static final int CIRCLE_START = 0x0001;
+
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
 		static final int PILGRIM = 0x40;
 		static final int ARMED = 0x80;
-		static final int UNUSED = 0xc0;
+
+		// Constants for special castle communications
+		static final int CIRCLE_READY = 0xff;
 
 		/** No message was received */
 		static final int NO_MESSAGE = -1;
@@ -154,6 +163,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		abstract int readRadio(Robot r);
 		abstract void sendCastle(int message);
 		abstract int readCastle(Robot r);
+
+		final boolean isRadioing(Robot r) {
+			return MyRobot.this.isRadioing(r) && r.id != me.id;
+		}
 
 		final int readFarmHalfLoc() {
 			for (Robot r: visibleRobots) {
@@ -265,7 +278,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	}
 
 	private boolean isArmed(int unit) {
-		return unit == SPECS.CASTLE || unit == SPECS.CRUSADER || unit == SPECS.PROPHET || unit == SPECS.PREACHER;
+		return unit == SPECS.CASTLE ||
+			unit == SPECS.CRUSADER ||
+			unit == SPECS.PROPHET ||
+			unit == SPECS.PREACHER ||
+			unit == ARMED_UNIT;
 	}
 
 	//////// Specific robot controllers ////////
@@ -338,20 +355,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			private TreeMap<Integer, Integer> assignments;
 			private int previousAssignment;
-			private LinkedList<Integer> relievedLocs;
+			private LinkedList<Integer> relieved;
 			private int[] incompleteData;
+			private int[] unitType;
+			private int armedUnits;
 
 			UnitWelfareChecker() {
 				assignments = new TreeMap<>();
 				previousAssignment = Vector.INVALID;
-				relievedLocs = new LinkedList<>();
+				relieved = new LinkedList<>();
 				incompleteData = new int[SPECS.MAX_ID+1];
+				unitType = new int[SPECS.MAX_ID+1];
 
 				Arrays.fill(incompleteData, -1);
+				Arrays.fill(unitType, NO_UNIT);
+				armedUnits = 0;
 
 				for (Robot r: visibleRobots) {
 					if (isVisible(r) && r.team == me.team) {
 						assignments.put(r.id, Vector.INVALID);
+						unitType[r.id] = r.unit;
+						if (isArmed(r.unit)) {
+							armedUnits++;
+						}
 					}
 				}
 			}
@@ -366,19 +392,30 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			 * @param cor the received coordinate
 			 * @return a completed MapLocation if one can be deduced, and Vector.INVALID otherwise
 			 */
-			int recordCoordinate(int id, int cor) {
+			int recordCoordinate(int id, int cor, int unit) {
+				if (assignments.containsKey(id)) {
+					return assignments.get(id);
+				}
 				if (incompleteData[id] == -1) {
 					incompleteData[id] = cor;
 					return Vector.INVALID;
 				}
 				int loc = Vector.makeMapLocation(incompleteData[id], cor);
 				assignments.put(id, loc);
+				unitType[id] = unit;
 				incompleteData[id] = -1;
+				if (isArmed(unit)) {
+					armedUnits++;
+				}
 				return loc;
 			}
 
 			int getAssignment(int id) {
-				return assignments.get(id);
+				Integer what = assignments.get(id);
+				if (what == null) {
+					return Vector.INVALID;
+				}
+				return what;
 			}
 
 			/**
@@ -396,27 +433,66 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							} else {
 								assignments.put(r.id, Vector.INVALID);
 							}
+							unitType[r.id] = r.unit;
+							if (isArmed(r.unit)) {
+								armedUnits++;
+							}
 						}
 					}
 					previousAssignment = Vector.INVALID;
 				}
 
-				relievedLocs.clear();
+				relieved.clear();
 				for (Integer assignedUnit: assignments.keySet()) {
 					if (getRobot(assignedUnit) == null) {
 						int whatLoc = assignments.get(assignedUnit);
 						assignments.remove(assignedUnit);
+						if (isArmed(unitType[assignedUnit])) {
+							armedUnits--;
+						}
+						unitType[assignedUnit] = NO_UNIT;
 						if (whatLoc != Vector.INVALID) {
-							relievedLocs.add(whatLoc);
+							relieved.add(whatLoc);
 						}
 					}
 				}
-				return relievedLocs;
+				return relieved;
+			}
+
+			/**
+			 * Run this to free all locations occupied by fighting units in preparation for a circle attack
+			 * @return A list of unit ids whose locations have been freed
+			 */
+			LinkedList<Integer> purgeForCircleAttack() {
+
+				relieved.clear();
+				for (Integer assignedUnit: assignments.keySet()) {
+					if (isArmed(unitType[assignedUnit])) {
+						/*
+						 * Your mission, should you choose to accept it, is to infiltrate the enemy turtle.
+						 * As always, should you or any of your IM Force be caught or killed, the Secretary
+						 * will disavow any knowledge of your actions.
+						 * This tape will self-destruct in ten seconds. Good luck.
+						 */
+						assignments.remove(assignedUnit);
+						unitType[assignedUnit] = NO_UNIT;
+						relieved.add(assignedUnit);
+					}
+				}
+				armedUnits = 0;
+				return relieved;
+			}
+
+			int numFriendlyArmedUnits() {
+				return armedUnits;
 			}
 		}
 
 		protected LinkedList<Integer> availableTurtles;
 		protected UnitWelfareChecker myUnitWelfareChecker;
+		protected int broadcastUniverseRadius;
+		protected CircleStatusType myCircleStatus;
+		protected LinkedList<Integer> circleParticipants;
 
 		StructureController() {
 			super();
@@ -431,6 +507,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			myUnitWelfareChecker = new UnitWelfareChecker();
+
+			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
+				int mapLoc = Vector.makeMapLocation(i, j);
+				if (Vector.get(mapLoc, map)) {
+					broadcastUniverseRadius = Math.max(broadcastUniverseRadius, Vector.distanceSquared(myLoc, mapLoc));
+				}
+			}
+
+			myCircleStatus = CircleStatusType.NO_CIRCLE;
 		}
 
 		protected abstract boolean isGoodTurtlingLocation(int loc);
@@ -526,6 +611,26 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			availableTurtles.pollLast();
 			return bestDir;
 		}
+
+		protected NullAction circleInitiate(int targetLoc) {
+			communications.sendRadio(Vector.compress(targetLoc) | Communicator.ATTACK,
+				broadcastUniverseRadius);
+			myCircleStatus = CircleStatusType.SENT_LOCATION;
+			return new NullAction();
+		}
+
+		protected NullAction circleSendRadius(int initialRadius) {
+			communications.sendRadio(initialRadius | Communicator.RADIUS, broadcastUniverseRadius);
+			myCircleStatus = CircleStatusType.WAITING_FOR_READY;
+			circleParticipants = myUnitWelfareChecker.purgeForCircleAttack();
+			return new NullAction();
+		}
+
+		protected NullAction circleFight() {
+			communications.sendRadio(Communicator.CIRCLE_START, broadcastUniverseRadius);
+			myCircleStatus = CircleStatusType.NO_CIRCLE;
+			return new NullAction();
+		}
 	}
 
 	private abstract class MobileRobotController extends SpecificRobotController {
@@ -542,6 +647,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					myHome = location;
 				}
 			}
+		}
+
+		MobileRobotController(int newHome) {
+			super();
+			
+			myHome = newHome;
 		}
 
 		private int attackPriority(int unitType) {
@@ -666,23 +777,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private static final int MAX_CLUSTERS = 32;
 
-		LinkedList<Integer> karboniteLocs;
-		LinkedList<Boolean> pilgrimAtKarbonite;
-		LinkedList<Boolean> ownKarbonite;
+		private LinkedList<Integer> karboniteLocs;
+		private LinkedList<Boolean> pilgrimAtKarbonite;
+		private LinkedList<Boolean> ownKarbonite;
 
-		LinkedList<Integer> fuelLocs;
-		LinkedList<Boolean> pilgrimAtFuel;
-		LinkedList<Boolean> ownFuel;
+		private LinkedList<Integer> fuelLocs;
+		private LinkedList<Boolean> pilgrimAtFuel;
+		private LinkedList<Boolean> ownFuel;
 
-		int[] pilgrimsAtCluster;
+		private int[] pilgrimsAtCluster;
 
-		TreeMap<Integer, Integer> castles;
+		private TreeMap<Integer, Integer> castles;
 
-		private static final int NO_UNIT = -1;
-		private static final int ARMED_UNIT = 420;
-		int[] unitType;
-
-		BoardSymmetryType symmetryStatus;
+		private BoardSymmetryType symmetryStatus;
 
 		CastleController() {
 			super();
@@ -697,8 +804,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			pilgrimsAtCluster = new int[MAX_CLUSTERS+1];
 
-			unitType = new int[SPECS.MAX_ID+1];
-			Arrays.fill(unitType, NO_UNIT);
 			castles = new TreeMap<>();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
@@ -735,6 +840,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 
 			if (myAction == null) {
+				myAction = tryToCompleteCircleBroadcast();
+			}
+
+			if (myAction == null) {
 				myAction = buildInResponseToNearbyEnemies();
 			}
 
@@ -746,11 +855,68 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToCreatePilgrim();
 			}
 
+			if (myAction == null) {
+				myAction = checkToInitiateCircle();
+			}
+
 			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false)) {
 				myAction = tryToCreateProphet();
 			}
 
 			return myAction;
+		}
+
+		private int circleCalculateRadius() {
+			// TODO actually calculate the number from the information you have
+			return 144;
+		}
+
+		private NullAction circleCheckUnitsReady() {
+			boolean allReady = true;
+			for (Integer id: circleParticipants) {
+				if (communications.readCastle(getRobot(id)) != Communicator.CIRCLE_READY) {
+					allReady = false;
+				}
+			}
+			if (allReady) {
+				return circleFight();
+			}
+			return null;
+		}
+
+		private NullAction checkToInitiateCircle() {
+
+			if (me.turn >= 152 && fuel >= 5000 && myUnitWelfareChecker.numFriendlyArmedUnits() >= 20) {
+				return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
+			}
+			return null;
+		}
+
+		private NullAction tryToCompleteCircleBroadcast() {
+
+			// Did another castle say something?
+			for (Integer castle: castles.keySet()) {
+				Robot r = getRobot(castle);
+				if (communications.isRadioing(r)) {
+					int what = communications.readRadio(r);
+					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && myCircleStatus == CircleStatusType.NO_CIRCLE) {
+						return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
+					} else if ((what & 0xf000) == (Communicator.RADIUS & 0xf000) && myCircleStatus == CircleStatusType.SENT_LOCATION) {
+						return circleSendRadius(what & 0x0fff);
+					} else if (what == Communicator.CIRCLE_START && myCircleStatus == CircleStatusType.WAITING_FOR_READY) {
+						return circleFight();
+					}
+				}
+			}
+			if (myCircleStatus == CircleStatusType.SENT_LOCATION) {
+				// We have an incomplete message
+				return circleSendRadius(circleCalculateRadius());
+			} else if (myCircleStatus == CircleStatusType.WAITING_FOR_READY) {
+				// We are waiting for units to get ready
+				return circleCheckUnitsReady();
+			}
+			// No circle broadcast to propagate or complete
+			return null;
 		}
 
 		@Override
@@ -815,7 +981,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private void readUnitLocations() {
 			for (Robot r: visibleRobots) {
-				if (r.team == me.team && r.turn <= 2) {
+				if (r.team == me.team && 1 <= r.turn && r.turn <= 2 && r.id != me.id) {
 					int what = communications.readCastle(r);
 					int unit = NO_UNIT;
 					switch (what & 0xc0) {
@@ -835,13 +1001,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 					// Messages should be guaranteed to be valid, but just in case
 					if (unit != NO_UNIT) {
-						int completeLocation = myUnitWelfareChecker.recordCoordinate(r.id, what & 0x3f);
 						// Only mark its unit type once full location is received
-						if (r.turn == 2) {
-							unitType[r.id] = unit;
-							if (unit == SPECS.CASTLE) {
-								castles.put(r.id, completeLocation);
-							}
+						int completeLocation = myUnitWelfareChecker.recordCoordinate(r.id, what & 0x3f, unit);
+						if (r.turn == 2 && unit == SPECS.CASTLE) {
+							castles.put(r.id, completeLocation);
 						}
 					}
 				}
@@ -948,6 +1111,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 
 			if (myAction == null) {
+				myAction = tryToCompleteCircleBroadcast();
+			}
+
+			if (myAction == null) {
 				myAction = buildInResponseToNearbyEnemies();
 			}
 
@@ -956,6 +1123,24 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return myAction;
+		}
+
+		private NullAction tryToCompleteCircleBroadcast() {
+
+			for (Robot r: visibleRobots) {
+				if (communications.isRadioing(r)) {
+					int what = communications.readRadio(r);
+					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && myCircleStatus == CircleStatusType.NO_CIRCLE) {
+						return circleInitiate(Vector.makeMapLocationFromCompressed(what & 0x0fff));
+					} else if ((what & 0xf000) == (Communicator.RADIUS & 0xf000) && myCircleStatus == CircleStatusType.SENT_LOCATION) {
+						return circleSendRadius(what & 0x0fff);
+					} else if (what == Communicator.CIRCLE_START && myCircleStatus == CircleStatusType.WAITING_FOR_READY) {
+						return circleFight();
+					}
+				}
+			}
+			// No circle broadcast to propagate
+			return null;
 		}
 
 		@Override
@@ -1160,15 +1345,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class TurtlingRobotController extends MobileRobotController {
 
 		private int assignedLoc;
+		private int circleLoc;
 
 		TurtlingRobotController() {
 			super();
 
 			assignedLoc = communications.readAssignedLoc();
+			circleLoc = Vector.INVALID;
 		}
 
 		@Override
 		Action runSpecificTurn() {
+
+			for (Robot r: visibleRobots) {
+				if (communications.isRadioing(r) && Vector.makeMapLocation(r.x, r.y) == myHome) {
+					int what = communications.readRadio(r);
+					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000)) {
+						circleLoc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
+					} else if ((what & 0xf000) == (Communicator.RADIUS & 0xf000) && circleLoc != Vector.INVALID) {
+						mySpecificRobotController = new CircleRobotController(circleLoc, what & 0x0fff, myHome);
+						return mySpecificRobotController.runSpecificTurn();
+					}
+				}
+			}
 
 			Action myAction = null;
 			sendMyAssignedLoc();
@@ -1206,6 +1405,61 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else if (me.turn == 2) {
 				myCastleTalk = Vector.getY(assignedLoc) | Communicator.ARMED;
 			}
+		}
+	}
+
+	private class CircleRobotController extends MobileRobotController {
+
+		private int circleLoc;
+		private int circleInitialRadius;
+
+		CircleRobotController(int loc, int rad, int newHome) {
+			super(newHome);
+
+			circleLoc = loc;
+			circleInitialRadius = rad;
+		}
+
+		@Override
+		Action runSpecificTurn() {
+
+			Action myAction = null;
+
+			if (myAction == null) {
+				myAction = tryToAttack();
+			}
+
+			if (myAction == null && !onEdgeOfCircle()) {
+				int dir = myBfsSolver.nextStep();
+				int newLoc = Vector.add(myLoc, dir);
+				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
+					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
+						(location) -> { return location == circleLoc; },
+						(location) -> { return isOccupiable(location); }
+					);
+					dir = myBfsSolver.nextStep();
+					newLoc = Vector.add(myLoc, dir);
+				}
+				if (dir != Vector.INVALID && isOccupiable(newLoc)) {
+					myAction = move(Vector.getX(dir), Vector.getY(dir));
+				}
+			}
+
+			return myAction;
+		}
+
+		private int getCircleRadius() {
+			return circleInitialRadius;
+		}
+
+		private boolean onEdgeOfCircle() {
+			for (int d: dirs) {
+				int loc = Vector.add(myLoc, d);
+				if (loc != Vector.INVALID && Vector.distanceSquared(loc, circleLoc) < getCircleRadius()) {
+					return true;
+				}
+			}
+			return false;
 		}
 	}
 }
