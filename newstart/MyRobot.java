@@ -360,13 +360,21 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				previousAssignment = location;
 			}
 
-			void recordCoordinate(int id, int cor) {
+			/**
+			 * Records a received coordinate
+			 * @param id  the robot to whom the coordinate belongs
+			 * @param cor the received coordinate
+			 * @return a completed MapLocation if one can be deduced, and Vector.INVALID otherwise
+			 */
+			int recordCoordinate(int id, int cor) {
 				if (incompleteData[id] == -1) {
 					incompleteData[id] = cor;
-				} else {
-					assignments.put(id, Vector.makeMapLocation(incompleteData[id], cor));
-					incompleteData[id] = -1;
+					return Vector.INVALID;
 				}
+				int loc = Vector.makeMapLocation(incompleteData[id], cor);
+				assignments.put(id, loc);
+				incompleteData[id] = -1;
+				return loc;
 			}
 
 			int getAssignment(int id) {
@@ -396,8 +404,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				relievedLocs.clear();
 				for (Integer assignedUnit: assignments.keySet()) {
 					if (getRobot(assignedUnit) == null) {
-						relievedLocs.add(assignments.get(assignedUnit));
+						int whatLoc = assignments.get(assignedUnit);
 						assignments.remove(assignedUnit);
+						if (whatLoc != Vector.INVALID) {
+							relievedLocs.add(whatLoc);
+						}
 					}
 				}
 				return relievedLocs;
@@ -414,17 +425,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
 				int loc = Vector.makeMapLocation(Vector.getX(myLoc)+i, Vector.getY(myLoc)+j);
-				if (loc != Vector.INVALID && Vector.distanceSquared(myLoc, loc) <= SPECS.UNITS[me.unit].VISION_RADIUS && (i != 0 || j != 0)) {
-					if ((Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc))%2 == 0) {
-						if (Vector.get(loc, map) && !Vector.get(loc, karboniteMap) && !Vector.get(loc, fuelMap)) {
-							availableTurtles.add(loc);
-						}
-					}
+				if (loc != Vector.INVALID && Vector.get(loc, map) && isGoodTurtlingLocation(loc)) {
+					availableTurtles.add(loc);
 				}
 			}
 
 			myUnitWelfareChecker = new UnitWelfareChecker();
 		}
+
+		protected abstract boolean isGoodTurtlingLocation(int loc);
 
 		protected void sendStructureLocation() {
 			if (me.turn == 1) {
@@ -487,7 +496,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		int pollClosestTurtleLocation(int targetLoc) {
+		protected int pollClosestTurtleLocation(int targetLoc) {
 			if (availableTurtles.isEmpty()) {
 				return Vector.INVALID;
 			}
@@ -654,7 +663,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		int[] pilgrimsAtCluster;
 
-		LinkedList<Integer> castles;
+		TreeMap<Integer, Integer> castles;
 
 		private static final int NO_UNIT = -1;
 		private static final int ARMED_UNIT = 420;
@@ -677,7 +686,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			unitType = new int[SPECS.MAX_ID+1];
 			Arrays.fill(unitType, NO_UNIT);
-			castles = new LinkedList<>();
+			castles = new TreeMap<>();
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
 				if (karboniteMap[j][i]) {
@@ -706,8 +715,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			sendStructureLocation();
 			readUnitLocations();
-			checkTurtleWelfare();
-			checkCastlesWelfare();
+			checkUnitsWelfare();
 			checkResourceDepotOwnership(karboniteLocs, ownKarbonite);
 			checkResourceDepotOwnership(fuelLocs, ownFuel);
 
@@ -724,20 +732,33 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private void checkTurtleWelfare() {
+		@Override
+		protected boolean isGoodTurtlingLocation(int loc) {
+			if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap) || loc == myLoc) {
+				return false;
+			}
+			return (Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == 0;
+		}
+
+		private void checkUnitsWelfare() {
 			for (Integer location: myUnitWelfareChecker.checkWelfare()) {
 				if (Vector.get(location, karboniteMap)) {
 					pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(myLoc)), false);
 				} else if (Vector.get(location, fuelMap)) {
 					pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(myLoc)), false);
 				} else {
+					// It would be a shame if that were a castle
+					for (Integer castle: castles.keySet()) {
+						if (castles.get(castle) == location) {
+							castles.remove(castle);
+							break;
+						}
+					}
+				}
+				if (isGoodTurtlingLocation(location)) {
 					availableTurtles.add(location);
 				}
 			}
-		}
-
-		private void checkCastlesWelfare() {
-			// TODO
 		}
 
 		private void readUnitLocations() {
@@ -762,12 +783,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 					// Messages should be guaranteed to be valid, but just in case
 					if (unit != NO_UNIT) {
-						myUnitWelfareChecker.recordCoordinate(r.id, what & 0x3f);
+						int completeLocation = myUnitWelfareChecker.recordCoordinate(r.id, what & 0x3f);
 						// Only mark its unit type once full location is received
 						if (r.turn == 2) {
 							unitType[r.id] = unit;
 							if (unit == SPECS.CASTLE) {
-								castles.add(r.id);
+								castles.put(r.id, completeLocation);
 							}
 						}
 					}
@@ -779,10 +800,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int i = 0; i < locations.size(); i++) {
 				own.set(i, true);
 				int myDist = Vector.distanceSquared(myLoc, locations.get(i));
-				for (Integer castle: castles) {
-					if (Vector.distanceSquared(myUnitWelfareChecker.getAssignment(castle), locations.get(i)) < myDist) {
+				for (Integer castle: castles.keySet()) {
+					if (Vector.distanceSquared(castles.get(castle), locations.get(i)) < myDist) {
 						own.set(i, false);
-					} else if (Vector.distanceSquared(myUnitWelfareChecker.getAssignment(castle), locations.get(i)) == myDist && castle < me.id) {
+					} else if (Vector.distanceSquared(castles.get(castle), locations.get(i)) == myDist && castle < me.id) {
 						own.set(i, false);
 					}
 				}
@@ -881,9 +902,22 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
+		@Override
+		protected boolean isGoodTurtlingLocation(int loc) {
+			if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap) || loc == myLoc) {
+				return false;
+			}
+			if (Vector.distanceSquared(myLoc, loc) > SPECS.UNITS[me.unit].VISION_RADIUS) {
+				return false;
+			}
+			return (Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == 0;
+		}
+
 		private void checkTurtleWelfare() {
 			for (Integer location: myUnitWelfareChecker.checkWelfare()) {
-				availableTurtles.add(location);
+				if (isGoodTurtlingLocation(location)) {
+					availableTurtles.add(location);
+				}
 			}
 		}
 	}
