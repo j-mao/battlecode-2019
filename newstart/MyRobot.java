@@ -1502,10 +1502,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		 * Rate decreases linearly from initialSqueezeRate
 		 * to finalSqueezeRate.
 		 */
-		private double initialSqueezeRate;
-		private double finalSqueezeRate;
-
-		private double initialRadius, squeezeConst, numSqueezeRounds;
+		private final double initialSqueezeRate;
+		private final double finalSqueezeRate;
+		private final double initialRadius;
+		private final double squeezeConst;
+		private final int numSqueezeRounds;
 
 		private LinkedList<Integer> circleLocs;
 		private int clock;
@@ -1521,7 +1522,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			initialRadius = boardSize;
 			squeezeConst = (finalSqueezeRate * finalSqueezeRate - initialSqueezeRate * initialSqueezeRate) / (2 * initialRadius);
-			numSqueezeRounds = 2 * initialRadius / (initialSqueezeRate + finalSqueezeRate);
+			numSqueezeRounds = (int) Math.round(2 * initialRadius / (initialSqueezeRate + finalSqueezeRate));
 		}
 
 		@Override
