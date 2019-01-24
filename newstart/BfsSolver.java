@@ -149,10 +149,13 @@ class BfsSolver {
 
 	/**
 	 * This bfs function should be self-explanatory
+	 * @param source The location of the start of the Bfs, serialised by the Vector class
+	 * @param maxSpeed The maximum allowed speed
+	 * @param preferredSpeed The preferred maximum movement; may be broken if wall-jump needed
 	 * @param objectiveCondition Bfs destination checker
 	 * @param visitCondition Which states to visit and therefore add to the queue
 	 */
-	void solve(int source, int maxSpeed,
+	void solve(int source, int maxSpeed, int preferredSpeed,
 			java.util.function.Function<Integer, Boolean> objectiveCondition,
 			java.util.function.Function<Integer, Boolean> visitCondition) {
 
@@ -213,7 +216,7 @@ class BfsSolver {
 				boolean shouldAdd = true;
 				if (solutionStackHead > 0) {
 					int tmp = solutionStack[solutionStackHead-1] + Vector.get(curLoc, fromDir);
-					if (Vector.magnitude(tmp) <= maxSpeed) {
+					if (Vector.magnitude(tmp) <= preferredSpeed) {
 						solutionStack[solutionStackHead-1] = tmp;
 						shouldAdd = false;
 					}

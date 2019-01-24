@@ -1339,7 +1339,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc) || Vector.get(newLoc, mayBecomeAttacked) == me.turn) {
-					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
+					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, SPECS.UNITS[me.unit].SPEED,
 						(location) -> {
 							if (wantChurch) {
 								return Vector.isAdjacent(location, churchLoc);
@@ -1457,7 +1457,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
-					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
+					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, SPECS.UNITS[me.unit].SPEED,
 						(location) -> {
 							return location == assignedLoc;
 						},
@@ -1565,7 +1565,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
-					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
+					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, 2,
 						(location) -> { return onEdgeOfCircle(location); },
 						(location) -> { return isOccupiable(location); }
 					);
