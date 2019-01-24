@@ -952,7 +952,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int requiredUnitsForCircle() {
-			return 30 + (boardSize*boardSize)/64;
+			return 30 + boardSize;
 		}
 
 		private int fuelForCircle() {
