@@ -1494,9 +1494,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class CircleRobotController extends MobileRobotController {
 
-		// Number of turns required for radius (not squared) to decrease by 1
-		private static final double SQUEEZE_RATE_INITIAL = 2;
-		private static final double SQUEEZE_RATE_FINAL = 10;
+		/**
+		 * Rate decreases linearly from initialSqueezeRate
+		 * to finalSqueezeRate.
+		 */
+		private double initialSqueezeRate;
+		private double finalSqueezeRate;
+
+		private double initialRadius, squeezeConst, numSqueezeRounds;
 
 		private LinkedList<Integer> circleLocs;
 		private int clock;
@@ -1506,6 +1511,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			circleLocs = circleLocations;
 			clock = 0;
+
+			initialSqueezeRate = boardSize / 64.;
+			finalSqueezeRate = 0.05;
+
+			initialRadius = boardSize;
+			squeezeConst = (finalSqueezeRate * finalSqueezeRate - initialSqueezeRate * initialSqueezeRate) / (2 * initialRadius);
+			numSqueezeRounds = 2 * initialRadius / (initialSqueezeRate + finalSqueezeRate);
 		}
 
 		@Override
@@ -1583,23 +1595,24 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
-		private int getCircleRadiusSquared() {
-			if (clock <= 20) return 144;
-			return (int) Math.pow(12 - clock*0.1, 2);
+		private int getCircleRadius() {
+			if (clock > numSqueezeRounds) return 1;
+			double rad = initialRadius - initialSqueezeRate * clock - 0.5 * squeezeConst * clock * clock;
+			return (int)Math.max(Math.round(rad), 1);
 		}
 
 		private double sminDistance(int queryLoc) {
 			double total = 0;
 			for (Integer loc: circleLocs) {
-				total += Math.exp(-Vector.distanceSquared(queryLoc, loc));
+				total += Math.exp(-Math.sqrt(Vector.distanceSquared(queryLoc, loc)) * 0.4);
 			}
-			return -Math.log(total);
+			return -Math.log(total) / 0.4;
 		}
 
 		private boolean onEdgeOfCircle(Integer queryLoc) {
 			for (int d: dirs) {
 				int loc = Vector.add(queryLoc, d);
-				if (loc != Vector.INVALID && sminDistance(loc) < getCircleRadiusSquared()) {
+				if (loc != Vector.INVALID && sminDistance(loc) < getCircleRadius()) {
 					return true;
 				}
 			}
