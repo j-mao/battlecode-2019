@@ -292,15 +292,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		list.pollLast();
 	}
 
-	private static <T> void removeObjectFromList(LinkedList<? super T> list, T object) {
-		for (int i = 0; i < list.size(); i++) {
-			if (list.get(i) == object) {
-				removeIndexFromList(list, i);
-				break;
-			}
-		}
-	}
-
 	//////// Specific robot controllers ////////
 
 	private abstract class SpecificRobotController {
@@ -1558,13 +1549,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private final double squeezeConst;
 		private final int numSqueezeRounds;
 
-		private LinkedList<Integer> circleLocs;
+		private TreeSet<Integer> circleLocs;
 		private int clock;
 
 		CircleRobotController(LinkedList<Integer> circleLocations, int newHome) {
 			super(newHome);
 
-			circleLocs = circleLocations;
+			circleLocs = new TreeSet<>(circleLocations);
 			clock = 0;
 
 			initialSqueezeRate = boardSize / 64.;
@@ -1629,9 +1620,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (communications.isRadioing(r)) {
 					int what = communications.readRadio(r);
 					if ((what & 0xf000) == (Communicator.CIRCLE_SUCCESS & 0xf000)) {
-						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
+						// Sorry but this has to be an Integer object to force the transpiler to do the
+						// remove properly
+						Integer loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
 						if (loc != Vector.INVALID) {
-							removeObjectFromList(circleLocs, new Integer(loc));
+							circleLocs.remove(loc);
 						}
 					}
 				}
@@ -1643,7 +1636,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (r == null || r.team == me.team || r.unit != SPECS.CASTLE) {
 						communications.sendRadio(Vector.compress(loc) | Communicator.CIRCLE_SUCCESS,
 							getBroadcastUniverseRadiusSquared());
-						removeObjectFromList(circleLocs, loc);
+						circleLocs.remove(loc);
 						break;
 					}
 				}
