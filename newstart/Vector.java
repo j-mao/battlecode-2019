@@ -114,4 +114,16 @@ class Vector {
 			return distanceSquared(refLoc, loc1) - distanceSquared(refLoc, loc2);
 		}
 	}
+
+	/**
+	 * Why does the transpiler force me to do this??
+	 * Literally sorts numbers in lexicographical order if I don't tell it to be numerical
+	 */
+	static class SortIncreasingInteger implements java.util.Comparator<Integer> {
+
+		@Override
+		public int compare(Integer a, Integer b) {
+			return a - b;
+		}
+	}
 }
