@@ -890,7 +890,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		CastleController() {
 			super();
-
 			karboniteLocs = new LinkedList<>();
 			pilgrimAtKarbonite = new LinkedList<>();
 			ownKarbonite = new LinkedList<>();
@@ -979,7 +978,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int requiredUnitsForCircle() {
-			return 30 + boardSize;
+			return 40 + boardSize;
 		}
 
 		private int fuelForCircle() {
@@ -989,6 +988,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private NullAction checkToInitiateCircle() {
 
 			if (fuel >= fuelForCircle() && myUnitWelfareChecker.numFriendlyArmedUnits() >= requiredUnitsForCircle()) {
+				log("Initiating circle... " + me.turn);
 				return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
 			}
 			return null;
