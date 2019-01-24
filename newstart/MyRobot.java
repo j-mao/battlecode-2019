@@ -603,17 +603,38 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected BuildAction buildInResponseToNearbyEnemies() {
-			int[] friendlyUnits = new int[6];
-			int[] enemyUnits = new int[6];
+			int friendlyCrusaders = 0;
+			int friendlyProphets = 0;
+			int friendlyPreachers = 0;
+
+			int enemyCrusaders = 0;
+			int enemyPreachers = 0;
+			int enemyNearWeakUnits = 0;
+			int enemyFarWeakUnits = 0;
+
 			int closestEnemy = Vector.INVALID;
 
 			for (Robot r: visibleRobots) {
 				if (isVisible(r)) {
 					if (r.team == me.team) {
-						friendlyUnits[r.unit]++;
+						if (r.unit == SPECS.CRUSADER) {
+							friendlyCrusaders++;
+						} else if (r.unit == SPECS.PROPHET) {
+							friendlyProphets++;
+						} else if (r.unit == SPECS.PREACHER) {
+							friendlyPreachers++;
+						}
 					} else {
-						enemyUnits[r.unit]++;
 						int theirLoc = Vector.makeMapLocation(r.x, r.y);
+						if (r.unit == SPECS.CRUSADER) {
+							enemyCrusaders++;
+						} else if (r.unit == SPECS.PREACHER) {
+							enemyPreachers++;
+						} else if (Vector.distanceSquared(myLoc, theirLoc) >= SPECS.UNITS[SPECS.PROPHET].ATTACK_RADIUS[0]) {
+							enemyFarWeakUnits++;
+						} else {
+							enemyNearWeakUnits++;
+						}
 						if (closestEnemy == Vector.INVALID ||
 							Vector.distanceSquared(myLoc, theirLoc) < Vector.distanceSquared(myLoc, closestEnemy)) {
 							closestEnemy = theirLoc;
@@ -623,12 +644,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			int toBuild = -1;
-			if (enemyUnits[SPECS.PREACHER] > friendlyUnits[SPECS.PREACHER] && canAffordToBuild(SPECS.PREACHER, true)) {
+			if (enemyPreachers > friendlyPreachers && canAffordToBuild(SPECS.PREACHER, true)) {
 				toBuild = SPECS.PREACHER;
-			} else if (enemyUnits[SPECS.PROPHET] > friendlyUnits[SPECS.PROPHET] && canAffordToBuild(SPECS.PROPHET, true)) {
-				toBuild = SPECS.PROPHET;
-			} else if (enemyUnits[SPECS.CASTLE]+enemyUnits[SPECS.CHURCH]+enemyUnits[SPECS.PILGRIM]+enemyUnits[SPECS.CRUSADER] > friendlyUnits[SPECS.CRUSADER] && canAffordToBuild(SPECS.CRUSADER, true)) {
+			} else if (enemyCrusaders+enemyNearWeakUnits > friendlyCrusaders && canAffordToBuild(SPECS.CRUSADER, true)) {
 				toBuild = SPECS.CRUSADER;
+			} else if (enemyFarWeakUnits > friendlyProphets && canAffordToBuild(SPECS.PROPHET, true)) {
+				toBuild = SPECS.PROPHET;
 			}
 
 			BuildAction myAction = null;
