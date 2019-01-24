@@ -142,6 +142,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		static final int FARM_HALF = 0x1000;
 		static final int ASSIGN = 0x2000;
 		static final int ATTACK = 0x3000;
+		static final int CIRCLE_SUCCESS = 0x4000;
 
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
@@ -339,6 +340,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				return 60;
 			}
 			return 0;
+		}
+
+		protected int getBroadcastUniverseRadiusSquared() {
+			int result = 0;
+			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
+				int mapLoc = Vector.makeMapLocation(i, j);
+				if (Vector.get(mapLoc, map)) {
+					result = Math.max(result, Vector.distanceSquared(myLoc, mapLoc));
+				}
+			}
+			return result;
 		}
 	}
 
@@ -544,13 +556,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			myUnitWelfareChecker = new UnitWelfareChecker();
-
-			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
-				int mapLoc = Vector.makeMapLocation(i, j);
-				if (Vector.get(mapLoc, map)) {
-					broadcastUniverseRadiusSquared = Math.max(broadcastUniverseRadiusSquared, Vector.distanceSquared(myLoc, mapLoc));
-				}
-			}
+			broadcastUniverseRadiusSquared = getBroadcastUniverseRadiusSquared();
 
 			lastCircleTurn = -1000000;
 		}
@@ -823,6 +829,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int[] pilgrimsAtCluster;
 
 		private TreeMap<Integer, Integer> castles;
+		private boolean oppositeCastleIsDestroyed;
 
 		private BoardSymmetryType symmetryStatus;
 
@@ -840,6 +847,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			pilgrimsAtCluster = new int[MAX_CLUSTERS+1];
 
 			castles = new TreeMap<>();
+			oppositeCastleIsDestroyed = false;
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
 				if (karboniteMap[j][i]) {
@@ -871,6 +879,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			checkUnitsWelfare();
 			checkResourceDepotOwnership(karboniteLocs, ownKarbonite);
 			checkResourceDepotOwnership(fuelLocs, ownFuel);
+			checkForCircleSuccess();
 
 			Action myAction = null;
 
@@ -925,12 +934,30 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (communications.isRadioing(r)) {
 					int what = communications.readRadio(r);
 					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && me.turn >= lastCircleTurn+CIRCLE_COOLDOWN) {
-						return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
+						if (oppositeCastleIsDestroyed) {
+							return circleInitiate(Vector.makeMapLocationFromCompressed(what & 0x0fff));
+						} else {
+							return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
+						}
 					}
 				}
 			}
 			// No circle broadcast to propagate or complete
 			return null;
+		}
+
+		private void checkForCircleSuccess() {
+			for (Robot r: visibleRobots) {
+				if (communications.isRadioing(r)) {
+					int what = communications.readRadio(r);
+					if ((what & 0xf000) == (Communicator.CIRCLE_SUCCESS & 0xf000)) {
+						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
+						if (loc == Vector.opposite(myLoc, symmetryStatus)) {
+							oppositeCastleIsDestroyed = true;
+						}
+					}
+				}
+			}
 		}
 
 		@Override
@@ -1463,6 +1490,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (clock == 2) {
 				checkForAnyExtraCircles();
 			}
+			checkForCircleSuccess();
 
 			Action myAction = null;
 
@@ -1498,6 +1526,42 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (loc != Vector.INVALID) {
 							circleLocs.add(loc);
 						}
+					}
+				}
+			}
+		}
+
+		private void checkForCircleSuccess() {
+			for (Robot r: visibleRobots) {
+				if (communications.isRadioing(r)) {
+					int what = communications.readRadio(r);
+					if ((what & 0xf000) == (Communicator.CIRCLE_SUCCESS & 0xf000)) {
+						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
+						if (loc != Vector.INVALID) {
+							boolean removed = false;
+							for (int i = 0; i < circleLocs.size(); i++) {
+								if (removed) {
+									circleLocs.set(i-1, circleLocs.get(i));
+								}
+								if (circleLocs.get(i) == loc) {
+									removed = true;
+								}
+							}
+							if (removed) {
+								circleLocs.pollLast();
+							}
+						}
+					}
+				}
+			}
+			for (Integer loc: circleLocs) {
+				int what = Vector.get(loc, visibleRobotMap);
+				if (what != MAP_INVISIBLE) {
+					Robot r = getRobot(what);
+					if (r == null || r.team != me.team || r.unit != SPECS.CASTLE) {
+						communications.sendRadio(Vector.compress(loc) | Communicator.CIRCLE_SUCCESS,
+							getBroadcastUniverseRadiusSquared());
+						break;
 					}
 				}
 			}
