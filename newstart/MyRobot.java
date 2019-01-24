@@ -68,7 +68,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	/** Initialisation function called on the robot's first turn */
 	private void initialise() {
 		myBfsSolver = new BfsSolver();
-		communications = new PlaintextCommunicator();
+		communications = new EncryptedCommunicator();
 		rng = new SimpleRandom();
 
 		mayBecomeAttacked = new int[boardSize][boardSize];
