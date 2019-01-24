@@ -551,6 +551,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		 * Does not need to be high, as circles are subject to resource and unit quantity checks
 		 */
 		protected static final int CIRCLE_COOLDOWN = 5;
+		protected final double CIRCLE_BUILD_REDUCTION_BASE;
+		protected final double CIRCLE_BUILD_REDUCTION_MEDIAN;
 
 		protected LinkedList<Integer> availableTurtles;
 		protected UnitWelfareChecker myUnitWelfareChecker;
@@ -559,6 +561,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		StructureController() {
 			super();
+
+			CIRCLE_BUILD_REDUCTION_BASE = 1.25;
+			CIRCLE_BUILD_REDUCTION_MEDIAN = boardSize / 2;
 
 			availableTurtles = new LinkedList<>();
 			int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
@@ -681,10 +686,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected boolean shouldBuildTurtlingUnit(int unit) {
+			// Base probability of building a unit
 			double prob = 0.1 + myUnitWelfareChecker.proportionOfPilgrimsGivingToUs();
+			// Increase with karbonite stores
 			int amCanBuild = (karbonite-karboniteReserve())/SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			amCanBuild = Math.min(amCanBuild, fuel/SPECS.UNITS[unit].CONSTRUCTION_FUEL);
 			prob *= (double)amCanBuild;
+			// Decrease with recent circle attacks
+			prob /= (1 + Math.pow(CIRCLE_BUILD_REDUCTION_BASE, CIRCLE_BUILD_REDUCTION_MEDIAN - (me.turn - lastCircleTurn)));
 			if (prob > Math.random()) { // Using Math.random() because it gives between 0 and 1
 				return true;
 			} else {
@@ -943,7 +952,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int fuelForCircle() {
-			return 4000 + 50 * requiredUnitsForCircle();
+			return 150 * requiredUnitsForCircle();
 		}
 
 		private NullAction checkToInitiateCircle() {
