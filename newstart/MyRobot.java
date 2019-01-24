@@ -899,8 +899,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (me.turn == OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
 				// At this point, we want resourcelocs to be sorted by distance to enemy
-				karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
-				fuelLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
+				bubbleSortResourceLocs(karboniteLocs, pilgrimAtKarbonite, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
+				bubbleSortResourceLocs(fuelLocs, pilgrimAtFuel, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 			}
 			sendStructureLocation();
 			readUnitLocations();
@@ -1166,6 +1166,27 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			return myAction;
 		}
+
+		private void bubbleSortResourceLocs(LinkedList<Integer> resourceLocs, LinkedList<Boolean> pilgrimAt, java.util.Comparator<Integer> comp) {
+			// This very specific sort function sorts the first linked list (which, for your convenience, must consist of integers)
+			// And simultaneous moves the second linked list (which, for your convenience, must consist of bools)
+			// And, its O(n^2)
+			for (int i = 0; i < resourceLocs.size(); i++) {
+				for (int j = 0; j < resourceLocs.size()-1; j++) {
+					int a = resourceLocs.get(j);
+					int b = resourceLocs.get(j+1);
+					if (comp.compare(a, b) > 0) {
+						// Swap
+						resourceLocs.set(j, b);
+						resourceLocs.set(j+1, a);
+						boolean A = pilgrimAt.get(j);
+						boolean B = pilgrimAt.get(j+1);
+						pilgrimAt.set(j, B);
+						pilgrimAt.set(j+1, A);
+					}
+				}
+			}
+		}
 	}
 
 	private class ChurchController extends StructureController {
@@ -1263,7 +1284,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			sendMyAssignedLoc();
 			boolean wantChurch = false;
-
 			if (Vector.get(churchLoc, visibleRobotMap) != MAP_INVISIBLE) {
 				if (isFriendlyStructureAtLoc(churchLoc)) {
 					churchBuilt = true;
