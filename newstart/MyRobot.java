@@ -279,6 +279,24 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			unit == ARMED_UNIT;
 	}
 
+	//////// Things that we need because the transpiler hates us ////////
+
+	private static <T> void removeIndexFromList(LinkedList<T> list, int index) {
+		for (int i = index+1; i < list.size(); i++) {
+			list.set(i-1, list.get(i));
+		}
+		list.pollLast();
+	}
+
+	private static <T> void removeObjectFromList(LinkedList<? super T> list, T object) {
+		for (int i = 0; i < list.size(); i++) {
+			if (list.get(i) == object) {
+				removeIndexFromList(list, i);
+				break;
+			}
+		}
+	}
+
 	//////// Specific robot controllers ////////
 
 	private abstract class SpecificRobotController {
@@ -326,13 +344,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected boolean canAffordToBuild(int unit, boolean urgent) {
-			if (fuel < SPECS.UNITS[unit].CONSTRUCTION_FUEL) {
-				return false;
+			int reqFuel = SPECS.UNITS[unit].CONSTRUCTION_FUEL;
+			if (unit != SPECS.CHURCH) {
+				reqFuel += 2; // location assignment cost
 			}
 			if (urgent) {
-				return karbonite >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
+				return fuel >= reqFuel && karbonite >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			}
-			return karbonite-karboniteReserve() >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
+			return fuel >= reqFuel && karbonite-karboniteReserve() >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 		}
 
 		protected int karboniteReserve() {
@@ -647,12 +666,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					bestIdx = i;
 				}
 			}
-			int bestDir = availableTurtles.get(bestIdx);
-			for (int i = bestIdx+1; i < availableTurtles.size(); i++) {
-				availableTurtles.set(i-1, availableTurtles.get(i));
-			}
-			availableTurtles.pollLast();
-			return bestDir;
+			int bestLoc = availableTurtles.get(bestIdx);
+			removeIndexFromList(availableTurtles, bestIdx);
+			return bestLoc;
 		}
 
 		protected NullAction circleInitiate(int targetLoc) {
@@ -1538,18 +1554,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if ((what & 0xf000) == (Communicator.CIRCLE_SUCCESS & 0xf000)) {
 						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
 						if (loc != Vector.INVALID) {
-							boolean removed = false;
-							for (int i = 0; i < circleLocs.size(); i++) {
-								if (removed) {
-									circleLocs.set(i-1, circleLocs.get(i));
-								}
-								if (circleLocs.get(i) == loc) {
-									removed = true;
-								}
-							}
-							if (removed) {
-								circleLocs.pollLast();
-							}
+							removeObjectFromList(circleLocs, new Integer(loc));
 						}
 					}
 				}
@@ -1558,9 +1563,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int what = Vector.get(loc, visibleRobotMap);
 				if (what != MAP_INVISIBLE) {
 					Robot r = getRobot(what);
-					if (r == null || r.team != me.team || r.unit != SPECS.CASTLE) {
+					if (r == null || r.team == me.team || r.unit != SPECS.CASTLE) {
 						communications.sendRadio(Vector.compress(loc) | Communicator.CIRCLE_SUCCESS,
 							getBroadcastUniverseRadiusSquared());
+						removeObjectFromList(circleLocs, loc);
 						break;
 					}
 				}
@@ -1568,7 +1574,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int getCircleRadiusSquared() {
-			return 5;
+			if (clock <= 20) return 144;
+			return (int) Math.pow(12 - clock*0.1, 2);
 		}
 
 		private double sminDistance(int queryLoc) {
