@@ -515,7 +515,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			/**
 			 * Run this to free all locations occupied by fighting units in preparation for a circle attack
-			 * @return A list of unit ids whose locations have been freed
+			 * @return A list of locations whose assigned units have been dispatched
 			 */
 			LinkedList<Integer> purgeForCircleAttack() {
 
@@ -523,7 +523,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				for (Integer assignedUnit: assignments.keySet()) {
 					if (isArmed(unitType[assignedUnit]) && unitType[assignedUnit] != SPECS.CASTLE) {
 						if (assignments.get(assignedUnit) != Vector.INVALID) {
-							availableTurtles.add(assignments.get(assignedUnit));
+							relieved.add(assignments.get(assignedUnit));
 						}
 						/*
 						 * Your mission, should you choose to accept it, is to infiltrate the enemy turtle.
@@ -533,7 +533,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						 */
 						assignments.put(assignedUnit, Vector.INVALID);
 						unitType[assignedUnit] = NO_UNIT;
-						relieved.add(assignedUnit);
 					}
 				}
 				armedUnits = 0;
@@ -560,7 +559,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected UnitWelfareChecker myUnitWelfareChecker;
 		protected int broadcastUniverseRadiusSquared;
 		protected int lastCircleTurn;
-		protected LinkedList<Integer> circleParticipants;
 
 		StructureController() {
 			super();
@@ -674,6 +672,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected NullAction circleInitiate(int targetLoc) {
 			communications.sendRadio(Vector.compress(targetLoc) | Communicator.ATTACK, broadcastUniverseRadiusSquared);
 			lastCircleTurn = me.turn;
+			for (Integer relieved: myUnitWelfareChecker.purgeForCircleAttack()) {
+				if (isGoodTurtlingLocation(relieved)) {
+					availableTurtles.add(relieved);
+				}
+			}
 			return new NullAction();
 		}
 
