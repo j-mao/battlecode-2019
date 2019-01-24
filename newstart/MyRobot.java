@@ -142,7 +142,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		static final int FARM_HALF = 0x1000;
 		static final int ASSIGN = 0x2000;
 		static final int ATTACK = 0x3000;
-		static final int RADIUS = 0x4000;
 
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
@@ -519,10 +518,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
+		/**
+		 * Once you start a circle, do not start another circle within this many turns
+		 * Used to prevent castles from continually propagating each other's messages
+		 * Does not need to be high, as circles are subject to resource and unit quantity checks
+		 */
+		protected static final int CIRCLE_COOLDOWN = 5;
+
 		protected LinkedList<Integer> availableTurtles;
 		protected UnitWelfareChecker myUnitWelfareChecker;
-		protected int broadcastUniverseRadius;
-		protected boolean circleInitiated;
+		protected int broadcastUniverseRadiusSquared;
+		protected int lastCircleTurn;
 		protected LinkedList<Integer> circleParticipants;
 
 		StructureController() {
@@ -542,11 +548,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
 				int mapLoc = Vector.makeMapLocation(i, j);
 				if (Vector.get(mapLoc, map)) {
-					broadcastUniverseRadius = Math.max(broadcastUniverseRadius, Vector.distanceSquared(myLoc, mapLoc));
+					broadcastUniverseRadiusSquared = Math.max(broadcastUniverseRadiusSquared, Vector.distanceSquared(myLoc, mapLoc));
 				}
 			}
 
-			circleInitiated = false;
+			lastCircleTurn = -1000000;
 		}
 
 		protected abstract boolean isGoodTurtlingLocation(int loc);
@@ -644,16 +650,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected NullAction circleInitiate(int targetLoc) {
-			communications.sendRadio(Vector.compress(targetLoc) | Communicator.ATTACK,
-				broadcastUniverseRadius);
-			circleInitiated = true;
-			return new NullAction();
-		}
-
-		protected NullAction circleSendRadius(int initialRadius) {
-			communications.sendRadio(initialRadius | Communicator.RADIUS, broadcastUniverseRadius);
-			circleInitiated = false;
-			circleParticipants = myUnitWelfareChecker.purgeForCircleAttack();
+			communications.sendRadio(Vector.compress(targetLoc) | Communicator.ATTACK, broadcastUniverseRadiusSquared);
+			lastCircleTurn = me.turn;
 			return new NullAction();
 		}
 
@@ -903,11 +901,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private int circleCalculateRadius() {
-			// TODO actually calculate the number from the information you have
-			return 144;
-		}
-
 		private int requiredUnitsForCircle() {
 			return 30 + (boardSize*boardSize)/64;
 		}
@@ -931,16 +924,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				Robot r = getRobot(castle);
 				if (communications.isRadioing(r)) {
 					int what = communications.readRadio(r);
-					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && !circleInitiated) {
+					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && me.turn >= lastCircleTurn+CIRCLE_COOLDOWN) {
 						return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
-					} else if ((what & 0xf000) == (Communicator.RADIUS & 0xf000) && circleInitiated) {
-						return circleSendRadius(what & 0x0fff);
 					}
 				}
-			}
-			if (circleInitiated) {
-				// We have an incomplete message
-				return circleSendRadius(circleCalculateRadius());
 			}
 			// No circle broadcast to propagate or complete
 			return null;
@@ -1157,10 +1144,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (Robot r: visibleRobots) {
 				if (communications.isRadioing(r)) {
 					int what = communications.readRadio(r);
-					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && !circleInitiated) {
+					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && me.turn >= lastCircleTurn + CIRCLE_COOLDOWN) {
 						return circleInitiate(Vector.makeMapLocationFromCompressed(what & 0x0fff));
-					} else if ((what & 0xf000) == (Communicator.RADIUS & 0xf000) && circleInitiated) {
-						return circleSendRadius(what & 0x0fff);
 					}
 				}
 			}
@@ -1370,13 +1355,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class TurtlingRobotController extends MobileRobotController {
 
 		private int assignedLoc;
-		private int circleLoc;
 
 		TurtlingRobotController() {
 			super();
 
 			assignedLoc = communications.readAssignedLoc();
-			circleLoc = Vector.INVALID;
 		}
 
 		@Override
@@ -1386,9 +1369,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (communications.isRadioing(r) && Vector.makeMapLocation(r.x, r.y) == myHome) {
 					int what = communications.readRadio(r);
 					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000)) {
-						circleLoc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
-					} else if ((what & 0xf000) == (Communicator.RADIUS & 0xf000) && circleLoc != Vector.INVALID) {
-						mySpecificRobotController = new CircleRobotController(circleLoc, what & 0x0fff, myHome);
+						mySpecificRobotController = new CircleRobotController(Vector.makeMapLocationFromCompressed(what & 0x0fff), myHome);
 						return mySpecificRobotController.runSpecificTurn();
 					}
 				}
@@ -1435,18 +1416,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class CircleRobotController extends MobileRobotController {
 
-		private static final int INCUBATION_ROUNDS = 20;
-		private static final double SQUEEZE_RATE = 10;
+		// Number of turns required for radius (not squared) to decrease by 1
+		private static final double SQUEEZE_RATE_INITIAL = 2;
+		private static final double SQUEEZE_RATE_FINAL = 10;
 
 		private int circleLoc;
-		private int circleInitialRadius;
 		private int clock;
 
-		CircleRobotController(int loc, int rad, int newHome) {
+		CircleRobotController(int loc, int newHome) {
 			super(newHome);
 
 			circleLoc = loc;
-			circleInitialRadius = rad;
 			clock = 0;
 		}
 
@@ -1480,17 +1460,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private int getCircleRadius() {
-			if (clock <= INCUBATION_ROUNDS) {
-				return circleInitialRadius;
-			}
-			return (int) Math.pow(Math.sqrt(circleInitialRadius) - (clock-INCUBATION_ROUNDS) / SQUEEZE_RATE, 2);
+		private int getCircleRadiusSquared() {
+			return 5;
 		}
 
 		private boolean onEdgeOfCircle() {
 			for (int d: dirs) {
 				int loc = Vector.add(myLoc, d);
-				if (loc != Vector.INVALID && Vector.distanceSquared(loc, circleLoc) < getCircleRadius()) {
+				if (loc != Vector.INVALID && Vector.distanceSquared(loc, circleLoc) < getCircleRadiusSquared()) {
 					return true;
 				}
 			}
