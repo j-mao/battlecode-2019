@@ -644,9 +644,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			int toBuild = -1;
-			if (enemyPreachers > friendlyPreachers && canAffordToBuild(SPECS.PREACHER, true)) {
+			if (enemyCrusaders+enemyPreachers > friendlyPreachers && canAffordToBuild(SPECS.PREACHER, true)) {
 				toBuild = SPECS.PREACHER;
-			} else if (enemyCrusaders+enemyNearWeakUnits > friendlyCrusaders && canAffordToBuild(SPECS.CRUSADER, true)) {
+			} else if (enemyNearWeakUnits > friendlyCrusaders && canAffordToBuild(SPECS.CRUSADER, true)) {
 				toBuild = SPECS.CRUSADER;
 			} else if (enemyFarWeakUnits > friendlyProphets && canAffordToBuild(SPECS.PROPHET, true)) {
 				toBuild = SPECS.PROPHET;
