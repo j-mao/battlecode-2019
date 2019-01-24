@@ -890,6 +890,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
+			if (me.turn == OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
+				// At this point, we want resourcelocs to be sorted by distance to enemy
+				karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
+				fuelLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
+			}
 			sendStructureLocation();
 			readUnitLocations();
 			checkUnitsWelfare();
@@ -1018,9 +1023,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private void checkUnitsWelfare() {
 			for (Integer location: myUnitWelfareChecker.checkWelfare()) {
 				if (Vector.get(location, karboniteMap)) {
-					pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(myLoc)), false);
+					if (me.turn < OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
+						pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(myLoc)), false);
+					} else {
+						pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus))), false);
+					}
 				} else if (Vector.get(location, fuelMap)) {
-					pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(myLoc)), false);
+					if (me.turn < OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
+						pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(myLoc)), false);
+					} else {
+						pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus))), false);
+					}
 				} else {
 					// It would be a shame if that were a castle
 					for (Integer castle: castles.keySet()) {
@@ -1116,12 +1129,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
-			for (int ind = 0; ind < locations.size(); ind++) {
-				int i = ind;
-				// If we're past the threshold, occupy from further away
-				if (me.turn > OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
-					i = locations.size() - ind - 1;
-				}
+			for (int i = 0; i < locations.size(); i++) {
 
 				// If we don't know where castles are, only try the resources in the
 				// closest cluster, or we screw up on maps like 420
@@ -1265,7 +1273,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					wantChurch = true;
 				}
 			}
-
 			Action myAction = null;
 
 			if (myAction == null && Vector.get(myLoc, isAttacked) == me.turn) {
