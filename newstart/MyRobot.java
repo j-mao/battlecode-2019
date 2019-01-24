@@ -380,7 +380,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			private LinkedList<Integer> relieved;
 			private int[] incompleteData;
 			private int[] unitType;
-			private boolean[] isMine;
 			private int armedUnits;
 			private TreeMap<Integer, Integer> pilgrimLastGive;
 			private int numPilgrimsConstant; // = to total resources/2
@@ -392,7 +391,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				relieved = new LinkedList<>();
 				incompleteData = new int[SPECS.MAX_ID+1];
 				unitType = new int[SPECS.MAX_ID+1];
-				isMine = new boolean[SPECS.MAX_ID+1];
 
 				Arrays.fill(incompleteData, -1);
 				Arrays.fill(unitType, NO_UNIT);
@@ -414,6 +412,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						numPilgrimsConstant++;
 					}
 				}
+			}
+
+			boolean checkIsArmed(int id) {
+				return isArmed(unitType[id]);
 			}
 
 			void recordNewAssignment(int location) {
@@ -465,7 +467,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (isVisible(r) && r.team == me.team && !assignments.containsKey(r.id)) {
 							if (Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 18) {
 								assignments.put(r.id, previousAssignment);
-								isMine[r.id] = true;
 							} else {
 								assignments.put(r.id, Vector.INVALID);
 							}
@@ -496,16 +497,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				return relieved;
 			}
 
-			LinkedList<Integer> getMyUnits() {
-				relieved.clear();
-				for (int i = 0; i <= SPECS.MAX_ID; i++) {
-					if (isMine[i] && unitType[i] != NO_UNIT) {
-						relieved.add(getAssignment(i));
-					}
-				}
-				return relieved;
-			}
-
 			void checkPilgrimGiving() {
 				// If a pilgrim is next to us, assumed it gave to us
 				for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) {
@@ -528,22 +519,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			 * Run this to free all locations occupied by fighting units in preparation for a circle attack
 			 * @return A list of locations whose assigned units have been dispatched
 			 */
-			LinkedList<Integer> purgeForCircleAttack() {
+			LinkedList<Integer> purgeForCircleAttack(int shedRadius) {
 
 				relieved.clear();
 				for (Integer assignedUnit: assignments.keySet()) {
 					if (isArmed(unitType[assignedUnit]) && unitType[assignedUnit] != SPECS.CASTLE) {
-						if (assignments.get(assignedUnit) != Vector.INVALID) {
-							relieved.add(assignments.get(assignedUnit));
+						int assignment = assignments.get(assignedUnit);
+						int thisDist = Integer.MAX_VALUE;
+						for (Integer structure: structures.keySet()) {
+							thisDist = Math.min(thisDist, Vector.distanceSquared(assignment, structures.get(structure)));
 						}
-						/*
-						 * Your mission, should you choose to accept it, is to infiltrate the enemy turtle.
-						 * As always, should you or any of your IM Force be caught or killed, the Secretary
-						 * will disavow any knowledge of your actions.
-						 * This tape will self-destruct in ten seconds. Good luck.
-						 */
-						assignments.put(assignedUnit, Vector.INVALID);
-						unitType[assignedUnit] = NO_UNIT;
+						if (thisDist >= shedRadius) {
+							if (assignment != Vector.INVALID) {
+								relieved.add(assignment);
+							}
+							/*
+							* Your mission, should you choose to accept it, is to infiltrate the enemy turtle.
+							* As always, should you or any of your IM Force be caught or killed, the Secretary
+							* will disavow any knowledge of your actions.
+							* This tape will self-destruct in ten seconds. Good luck.
+							*/
+							assignments.put(assignedUnit, Vector.INVALID);
+							unitType[assignedUnit] = NO_UNIT;
+						}
 					}
 				}
 				armedUnits = 0;
@@ -575,6 +573,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected int broadcastUniverseRadiusSquared;
 		protected int lastCircleTurn;
 
+		protected TreeMap<Integer, Integer> structures;
+
 		StructureController() {
 			super();
 
@@ -594,8 +594,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			myUnitWelfareChecker = new UnitWelfareChecker();
 			broadcastUniverseRadiusSquared = getBroadcastUniverseRadiusSquared();
-
 			lastCircleTurn = -1000000;
+
+			structures = new TreeMap<>();
+			structures.put(me.id, myLoc);
 		}
 
 		protected abstract boolean isGoodTurtlingLocation(int loc);
@@ -702,7 +704,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			circleInitiated = false;
 			communications.sendRadio(shedRadius | Communicator.SHED_RADIUS, broadcastUniverseRadiusSquared);
 			lastCircleTurn = me.turn;
-			for (Integer relieved: myUnitWelfareChecker.purgeForCircleAttack()) {
+			for (Integer relieved: myUnitWelfareChecker.purgeForCircleAttack(shedRadius)) {
 				if (isGoodTurtlingLocation(relieved)) {
 					availableTurtles.add(relieved);
 				}
@@ -993,12 +995,22 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int calculateShedRadius() {
-			LinkedList<Integer> myUnits = myUnitWelfareChecker.getMyUnits();
-			myUnits.sort(new Vector.SortByDistance(myLoc));
-			int reqUnits = requiredUnitsForCircle();
-			int haveUnits = myUnitWelfareChecker.numFriendlyArmedUnits();
-			int take = Math.max(1, (int) (myUnits.size() * haveUnits * 1.0 / reqUnits));
-			return Vector.distanceSquared(myLoc, myUnits.get(myUnits.size() - take));
+			LinkedList<Integer> dists = new LinkedList<>();
+			for (Robot r: visibleRobots) {
+				if (r.team == me.team && myUnitWelfareChecker.checkIsArmed(r.id)) {
+					int assignment = myUnitWelfareChecker.getAssignment(r.id);
+					if (assignment == Vector.INVALID) {
+						continue;
+					}
+					int thisDist = Integer.MAX_VALUE;
+					for (Integer structure: structures.keySet()) {
+						thisDist = Math.min(thisDist, Vector.distanceSquared(assignment, structures.get(structure)));
+					}
+					dists.add(thisDist);
+				}
+			}
+			Collections.sort(dists, new Vector.SortIncreasingInteger());
+			return dists.get(dists.size() - requiredUnitsForCircle());
 		}
 
 		private NullAction tryToCompleteCircleBroadcast() {
@@ -1101,6 +1113,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							break;
 						}
 					}
+					for (Integer structure: structures.keySet()) {
+						if (structures.get(structure) == location) {
+							structures.remove(structure);
+							break;
+						}
+					}
 				}
 				if (isGoodTurtlingLocation(location)) {
 					availableTurtles.add(location);
@@ -1134,6 +1152,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						int completeLocation = myUnitWelfareChecker.recordCoordinate(r.id, what & 0x3f, unit);
 						if (r.turn == 2 && unit == SPECS.CASTLE) {
 							castles.put(r.id, completeLocation);
+						}
+						if (r.turn == 2 && isStructure(unit)) {
+							structures.put(r.id, completeLocation);
 						}
 					}
 				}
