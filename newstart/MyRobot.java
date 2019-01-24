@@ -920,7 +920,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private NullAction checkToInitiateCircle() {
 
-			if (me.turn >= 152 && fuel >= fuelForCircle() && myUnitWelfareChecker.numFriendlyArmedUnits() >= requiredUnitsForCircle()) {
+			if (fuel >= fuelForCircle() && myUnitWelfareChecker.numFriendlyArmedUnits() >= requiredUnitsForCircle()) {
 				return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
 			}
 			return null;
