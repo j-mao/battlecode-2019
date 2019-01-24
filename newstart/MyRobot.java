@@ -305,6 +305,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private abstract class SpecificRobotController {
 
+		protected final int SPAM_CRUSADER_TURN_THRESHOLD = SPECS.MAX_ROUNDS-10;
+
 		protected int myCastleTalk;
 
 		SpecificRobotController() {
@@ -359,7 +361,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected int karboniteReserve() {
-			if (me.turn < SPECS.MAX_ROUNDS-10) {
+			if (me.turn < SPAM_CRUSADER_TURN_THRESHOLD) {
 				return 60;
 			}
 			return 0;
@@ -645,14 +647,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		protected BuildAction tryToCreateProphet() {
+		protected BuildAction tryToCreateTurtleUnit(int unit) {
 			int turtleLoc = pollClosestTurtleLocation(myLoc);
 			if (turtleLoc != Vector.INVALID) {
 				int buildDir = selectDirectionTowardsLocation(turtleLoc);
 				if (buildDir != Vector.INVALID) {
-					BuildAction myAction = buildUnit(SPECS.PROPHET, Vector.getX(buildDir), Vector.getY(buildDir));
+					BuildAction myAction = buildUnit(unit, Vector.getX(buildDir), Vector.getY(buildDir));
 					sendAssignedLoc(turtleLoc);
 					return myAction;
+				} else {
+					// put it back in
+					availableTurtles.add(turtleLoc);
 				}
 			}
 			return null;
@@ -923,6 +928,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToAttack();
 			}
 
+			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD && canAffordToBuild(SPECS.CRUSADER, false)) {
+				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
+			}
+
 			if (myAction == null && canAffordToBuild(SPECS.PILGRIM, false)) {
 				myAction = tryToCreatePilgrim();
 			}
@@ -932,7 +941,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
-				myAction = tryToCreateProphet();
+				myAction = tryToCreateTurtleUnit(SPECS.PROPHET);
 			}
 
 			return myAction;
@@ -1228,8 +1237,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = buildInResponseToNearbyEnemies();
 			}
 
+			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD && canAffordToBuild(SPECS.CRUSADER, false)) {
+				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
+			}
+
 			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
-				myAction = tryToCreateProphet();
+				myAction = tryToCreateTurtleUnit(SPECS.PROPHET);
 			}
 
 			return myAction;
