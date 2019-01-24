@@ -1574,10 +1574,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private double sminDistance(int queryLoc) {
 			double total = 0;
 			for (Integer loc: circleLocs) {
-				total += Math.exp(Vector.distanceSquared(queryLoc, loc));
+				total += Math.exp(-Vector.distanceSquared(queryLoc, loc));
 			}
-			total = Math.log(total / circleLocs.size());
-			return total;
+			return -Math.log(total);
 		}
 
 		private boolean onEdgeOfCircle(Integer queryLoc) {
