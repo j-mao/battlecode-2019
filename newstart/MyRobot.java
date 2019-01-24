@@ -1102,6 +1102,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			BuildAction myAction = null;
 
+			// If we have a lot more karbonite pilgrims than fuel pilgrims, probably want to make some fuel pilgrims
+			if (myAction == null && (frequency(pilgrimAtFuel, true)+1)*4 <= frequency(pilgrimAtKarbonite, true)) {
+				myAction = tryToCreatePilgrimForResource(fuelLocs, pilgrimAtFuel, ownFuel, false);
+			}
 			if (myAction == null) {
 				myAction = tryToCreatePilgrimForResource(karboniteLocs, pilgrimAtKarbonite, ownKarbonite, me.turn <= 10);
 			}
@@ -1182,6 +1186,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
+		}
+
+		private <T> int frequency(LinkedList<T> list, T val) {
+			// Collections.frequency doesn't seem to work
+			int ans = 0;
+			Iterator<T> iterator = list.iterator();
+			while (iterator.hasNext())
+			{
+				if (iterator.next() == val) {
+					ans++;
+				}
+			}
+			return ans;
 		}
 	}
 
