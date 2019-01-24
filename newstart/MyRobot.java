@@ -1354,26 +1354,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class TurtlingRobotController extends MobileRobotController {
 
+		private LinkedList<Integer> circleLocs;
 		private int assignedLoc;
 
 		TurtlingRobotController() {
 			super();
 
+			circleLocs = new LinkedList<>();
 			assignedLoc = communications.readAssignedLoc();
 		}
 
 		@Override
 		Action runSpecificTurn() {
 
-			for (Robot r: visibleRobots) {
-				if (communications.isRadioing(r) && Vector.makeMapLocation(r.x, r.y) == myHome) {
-					int what = communications.readRadio(r);
-					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000)) {
-						mySpecificRobotController = new CircleRobotController(Vector.makeMapLocationFromCompressed(what & 0x0fff), myHome);
-						return mySpecificRobotController.runSpecificTurn();
-					}
-				}
-			}
+			checkForCircleAssignments();
 
 			Action myAction = null;
 			sendMyAssignedLoc();
@@ -1405,6 +1399,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
+		private Action checkForCircleAssignments() {
+			int oldLength = circleLocs.size();
+			boolean go = false;
+
+			for (Robot r: visibleRobots) {
+				if (communications.isRadioing(r)) {
+					int what = communications.readRadio(r);
+					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000)) {
+						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
+						if (loc != Vector.INVALID) {
+							circleLocs.add(loc);
+							if (Vector.makeMapLocation(r.x, r.y) == myHome) {
+								go = true;
+							}
+						}
+					}
+				}
+			}
+
+			if (go) {
+				mySpecificRobotController = new CircleRobotController(circleLocs, myHome);
+				return mySpecificRobotController.runSpecificTurn();
+			} else {
+				// Clear out old messages
+				for (int i = 0; i < oldLength; i++) {
+					circleLocs.pollFirst();
+				}
+			}
+			return null;
+		}
+
 		private void sendMyAssignedLoc() {
 			if (me.turn == 1) {
 				myCastleTalk = Vector.getX(assignedLoc) | Communicator.ARMED;
@@ -1420,13 +1445,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private static final double SQUEEZE_RATE_INITIAL = 2;
 		private static final double SQUEEZE_RATE_FINAL = 10;
 
-		private int circleLoc;
+		private LinkedList<Integer> circleLocs;
 		private int clock;
 
-		CircleRobotController(int loc, int newHome) {
+		CircleRobotController(LinkedList<Integer> circleLocations, int newHome) {
 			super(newHome);
 
-			circleLoc = loc;
+			circleLocs = circleLocations;
 			clock = 0;
 		}
 
@@ -1435,18 +1460,22 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			clock++;
 
+			if (clock == 2) {
+				checkForAnyExtraCircles();
+			}
+
 			Action myAction = null;
 
 			if (myAction == null) {
 				myAction = tryToAttack();
 			}
 
-			if (myAction == null && !onEdgeOfCircle()) {
+			if (myAction == null && !onEdgeOfCircle(myLoc)) {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
-						(location) -> { return location == circleLoc; },
+						(location) -> { return onEdgeOfCircle(location); },
 						(location) -> { return isOccupiable(location); }
 					);
 					dir = myBfsSolver.nextStep();
@@ -1460,14 +1489,37 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
+		private void checkForAnyExtraCircles() {
+			for (Robot r: visibleRobots) {
+				if (communications.isRadioing(r)) {
+					int what = communications.readRadio(r);
+					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000)) {
+						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
+						if (loc != Vector.INVALID) {
+							circleLocs.add(loc);
+						}
+					}
+				}
+			}
+		}
+
 		private int getCircleRadiusSquared() {
 			return 5;
 		}
 
-		private boolean onEdgeOfCircle() {
+		private double sminDistance(int queryLoc) {
+			double total = 0;
+			for (Integer loc: circleLocs) {
+				total += Math.exp(Vector.distanceSquared(queryLoc, loc));
+			}
+			total = Math.log(total / circleLocs.size());
+			return total;
+		}
+
+		private boolean onEdgeOfCircle(Integer queryLoc) {
 			for (int d: dirs) {
-				int loc = Vector.add(myLoc, d);
-				if (loc != Vector.INVALID && Vector.distanceSquared(loc, circleLoc) < getCircleRadiusSquared()) {
+				int loc = Vector.add(queryLoc, d);
+				if (loc != Vector.INVALID && sminDistance(loc) < getCircleRadiusSquared()) {
 					return true;
 				}
 			}
