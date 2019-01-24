@@ -105,9 +105,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							boolean isDirectTarget = Vector.magnitude(dir) >= SPECS.UNITS[r.unit].ATTACK_RADIUS[0];
 
 							// Offset for being potentially attacked
-							int offset = 2;
+							int offset = -1;
 							if (r.unit == SPECS.CASTLE) {
-								offset = 0;
+								offset = 0; // Castles don't move
+							} else if (r.unit == SPECS.CRUSADER) {
+								offset = 2; // Standard
+							} else if (r.unit == SPECS.PROPHET) {
+								offset = 0; // Prevent pilgrims from getting terrified
 							} else if (r.unit == SPECS.PREACHER) {
 								offset = 3; // AoE
 							}
@@ -1278,7 +1282,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			Action myAction = null;
 
-			if (myAction == null && Vector.get(myLoc, isAttacked) == me.turn) {
+			if (myAction == null && Vector.get(myLoc, mayBecomeAttacked) == me.turn) {
 				myAction = moveSomewhereSafe();
 			}
 
@@ -1314,7 +1318,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
-				if (dir == Vector.INVALID || !isOccupiable(newLoc) || Vector.get(newLoc, isAttacked) == me.turn) {
+				if (dir == Vector.INVALID || !isOccupiable(newLoc) || Vector.get(newLoc, mayBecomeAttacked) == me.turn) {
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED,
 						(location) -> {
 							if (wantChurch) {
@@ -1330,13 +1334,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						},
 						(location) -> {
 							return isOccupiable(location) &&
-								(Vector.get(location, isAttacked) != me.turn || Vector.get(assignedLoc, isAttacked) == me.turn);
+								(Vector.get(location, mayBecomeAttacked) != me.turn || Vector.get(assignedLoc, mayBecomeAttacked) == me.turn);
 						}
 					);
 					dir = myBfsSolver.nextStep();
 					newLoc = Vector.add(myLoc, dir);
 				}
-				if (dir != Vector.INVALID && isOccupiable(newLoc) && Vector.get(newLoc, isAttacked) != me.turn) {
+				if (dir != Vector.INVALID && isOccupiable(newLoc) && Vector.get(newLoc, mayBecomeAttacked) != me.turn) {
 					myAction = move(Vector.getX(dir), Vector.getY(dir));
 				}
 			}
