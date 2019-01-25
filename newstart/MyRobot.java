@@ -1388,6 +1388,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int assignedLoc;
 		private int farmHalfQty;
+		private boolean farmHalf;
 		private int churchLoc;
 		private boolean churchBuilt;
 
@@ -1397,9 +1398,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			assignedLoc = communications.readFarmHalfLoc();
 			if (assignedLoc != Vector.INVALID) {
 				farmHalfQty = 2;
+				farmHalf = true;
 			} else {
 				assignedLoc = communications.readAssignedLoc();
 				farmHalfQty = 0;
+				farmHalf = false;
 			}
 
 			churchLoc = ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, assignedLoc, myHome);
@@ -1465,6 +1468,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 				myAction = give(Vector.getX(myHome-myLoc), Vector.getY(myHome-myLoc), me.karbonite, me.fuel);
 				farmHalfQty = Math.max(farmHalfQty - 1, 0);
+			}
+
+			if (myAction == null && (me.karbonite >= karboniteLimit() || me.fuel >= fuelLimit()) && !farmHalf && !churchBuilt) {
+				myAction = new NullAction();
 			}
 
 			if (myAction == null) {
