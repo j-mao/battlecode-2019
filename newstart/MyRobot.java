@@ -1678,7 +1678,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		CircleRobotController(LinkedList<Integer> circleLocations, int newHome) {
 			super(newHome);
 
-			circleLocs = new TreeSet<>(circleLocations);
+			circleLocs = new TreeSet<>();
+			for (Integer loc: circleLocations) {
+				circleLocs.add(loc);
+			}
 			clock = 0;
 
 			initialSqueezeRate = boardSize / 64.;
