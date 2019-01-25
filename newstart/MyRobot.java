@@ -883,6 +883,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int[] pilgrimsAtCluster;
 		private boolean[] bodyguardAtCluster;
+		private int myClusterId;
 
 		// Ignores pilgrim deaths.
 		private int pilgrimsBuilt;
@@ -925,6 +926,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc, myLoc);
 				}
 			}
+
+			myClusterId = 0;
+			int minDist = Integer.MAX_VALUE;
+			for (int i = 0; i < boardSize; ++i) for (int j = 0; j < boardSize; ++j) {
+				int loc = Vector.makeMapLocation(i, j);
+				if (!ResourceClusterSolver.isAssigned(loc)) continue;
+
+				int dist = Vector.distanceSquared(myLoc, loc);
+				if (dist > minDist) continue;
+
+				myClusterId = ResourceClusterSolver.assignedCluster(loc);
+				minDist = dist;
+			}
+
 			karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 			fuelLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 
@@ -1202,7 +1217,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				for (int i = 0; i < locations.size(); ++i) {
 					// If we don't know where castles are, only try the resources in the closest cluster
 					if (me.turn <= 3 &&
-						ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+						ResourceClusterSolver.assignedCluster(locations.get(i)) != myClusterId) {
 
 						continue;
 					}
@@ -1240,7 +1255,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				for (int i = 0; i < locations.size(); i++) {
 					// If we don't know where castles are, only try the resources in the closest cluster
 					if (me.turn <= 3 &&
-						ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+						ResourceClusterSolver.assignedCluster(locations.get(i)) != myClusterId) {
 
 						continue;
 					}
@@ -1257,7 +1272,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					// If we don't know where castles are, only try the resources in the
 					// closest cluster, or we screw up on maps like 420
 					if (me.turn <= 3 &&
-						ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+						ResourceClusterSolver.assignedCluster(locations.get(i)) != myClusterId) {
 						continue;
 					}
 
@@ -1268,7 +1283,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 							// We send FARM_HALF if the unit is close <=> it should come home
 							// Don't bother with a bodyguard, cause the location is close
-							if (clusterId == ResourceClusterSolver.assignedCluster(myLoc)) {
+							if (clusterId == myClusterId) {
 								int dir = selectDirectionTowardsLocation(locations.get(i));
 								if (dir != Vector.INVALID) {
 									myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
