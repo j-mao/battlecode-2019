@@ -882,6 +882,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private LinkedList<Boolean> ownFuel;
 
 		private int[] pilgrimsAtCluster;
+		private boolean[] bodyguardAtCluster;
+
+		// Ignores pilgrim deaths.
+		private int pilgrimsBuilt;
 
 		private TreeMap<Integer, Integer> castles;
 		private boolean oppositeCastleIsDestroyed;
@@ -899,6 +903,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			ownFuel = new LinkedList<>();
 
 			pilgrimsAtCluster = new int[MAX_CLUSTERS+1];
+			bodyguardAtCluster = new boolean[MAX_CLUSTERS+1];
+			pilgrimsBuilt = 0;
 
 			castles = new TreeMap<>();
 			oppositeCastleIsDestroyed = false;
@@ -919,8 +925,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc, myLoc);
 				}
 			}
-			karboniteLocs.sort(new Vector.SortByDistance(myLoc));
-			fuelLocs.sort(new Vector.SortByDistance(myLoc));
+			karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
+			fuelLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 
 			symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
 		}
@@ -928,11 +934,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
-			if (me.turn == OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
-				// At this point, we want resourcelocs to be sorted by distance to enemy
-				bubbleSortResourceLocs(karboniteLocs, pilgrimAtKarbonite, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
-				bubbleSortResourceLocs(fuelLocs, pilgrimAtFuel, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
-			}
 			sendStructureLocation();
 			readUnitLocations();
 			checkUnitsWelfare();
@@ -958,7 +959,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
 			}
 
-			if (myAction == null && canAffordToBuild(SPECS.PILGRIM, false)) {
+			if (myAction == null) {
+				// This checks if it's affordable.
 				myAction = tryToCreatePilgrim();
 			}
 
@@ -1094,17 +1096,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private void checkUnitsWelfare() {
 			for (Integer location: myUnitWelfareChecker.checkWelfare()) {
 				if (Vector.get(location, karboniteMap)) {
-					if (me.turn < OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
-						pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(myLoc)), false);
-					} else {
-						pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus))), false);
-					}
+					pilgrimAtKarbonite.set(Collections.binarySearch(karboniteLocs, location, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus))), false);
 				} else if (Vector.get(location, fuelMap)) {
-					if (me.turn < OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
-						pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(myLoc)), false);
-					} else {
-						pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus))), false);
-					}
+					pilgrimAtFuel.set(Collections.binarySearch(fuelLocs, location, new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus))), false);
 				} else {
 					// It would be a shame if that were a castle
 					for (Integer castle: castles.keySet()) {
@@ -1181,61 +1175,172 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			// If we have a lot more karbonite pilgrims than fuel pilgrims, probably want to make some fuel pilgrims
 			if (myAction == null && (frequency(pilgrimAtFuel, true)+1)*4 <= frequency(pilgrimAtKarbonite, true)) {
-				myAction = tryToCreatePilgrimForResource(fuelLocs, pilgrimAtFuel, ownFuel, false);
+				myAction = tryToCreatePilgrimForResource(fuelLocs, pilgrimAtFuel, ownFuel);
 			}
 			if (myAction == null) {
-				myAction = tryToCreatePilgrimForResource(karboniteLocs, pilgrimAtKarbonite, ownKarbonite, me.turn <= 10);
+				myAction = tryToCreatePilgrimForResource(karboniteLocs, pilgrimAtKarbonite, ownKarbonite);
 			}
 
 			if (myAction == null) {
-				myAction = tryToCreatePilgrimForResource(fuelLocs, pilgrimAtFuel, ownFuel, false);
+				myAction = tryToCreatePilgrimForResource(fuelLocs, pilgrimAtFuel, ownFuel);
 			}
 
 			return myAction;
 		}
 
-		private BuildAction tryToCreatePilgrimForResource(LinkedList<Integer> locations, LinkedList<Boolean> pilgrimAt, LinkedList<Boolean> own, boolean requestFarmHalf) {
+		private BuildAction tryToCreatePilgrimForResource(LinkedList<Integer> locations, LinkedList<Boolean> pilgrimAt, LinkedList<Boolean> own) {
+			if (!canAffordToBuild(SPECS.PILGRIM, false)) return null;
+
 			BuildAction myAction = null;
 
-			int minAssigned = Integer.MAX_VALUE;
-			for (int i = 0; i < locations.size(); i++) {
-				// If we don't know where castles are, only try the resources in the closest cluster
-				if (me.turn <= 3 &&
-					ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+			if (pilgrimsBuilt % 4 == 0 || me.turn < OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
+				// Every now and then, we'll just build a worker somewhere pretty close by.
 
-					continue;
-				}
+				int closestDist = Integer.MAX_VALUE;
+				int bestInd = -1;
+				int bestLoc = Vector.INVALID;
+				for (int i = 0; i < locations.size(); ++i) {
+					// If we don't know where castles are, only try the resources in the closest cluster
+					if (me.turn <= 3 &&
+						ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
 
-				if (own.get(i) && !pilgrimAt.get(i)) {
-					if (Vector.distanceSquared(locations.get(i), myLoc) <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
-						minAssigned = Math.min(minAssigned, pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))]);
+						continue;
+					}
+
+					if (own.get(i) && !pilgrimAt.get(i)) {
+						int dist = Vector.distanceSquared(locations.get(i), myLoc);
+						if (dist <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
+							if (dist <= closestDist) {
+								closestDist = dist;
+								bestInd = i;
+								bestLoc = locations.get(i);
+							}
+						}
 					}
 				}
-			}
 
-			for (int i = 0; i < locations.size(); i++) {
+				if (bestLoc != Vector.INVALID) {
+					int dir = selectDirectionTowardsLocation(bestLoc);
+					if (dir != Vector.INVALID) {
+						myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
+						pilgrimAt.set(bestInd, true);
+						pilgrimsBuilt++;
+						pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(bestLoc)]++;
+						// We send FARM_HALF if the unit is close <=> it should come home
+						// Also, these guys are close, meh, they probably don't need a bodyguard
+						sendFarmHalfLoc(bestLoc);
 
-				// If we don't know where castles are, only try the resources in the
-				// closest cluster, or we screw up on maps like 420
-				if (me.turn <= 3 &&
-					ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
-					continue;
+						break;
+					}
+				}
+			} else {
+				// Building as usual
+
+				int minAssigned = Integer.MAX_VALUE;
+				for (int i = 0; i < locations.size(); i++) {
+					// If we don't know where castles are, only try the resources in the closest cluster
+					if (me.turn <= 3 &&
+						ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+
+						continue;
+					}
+
+					if (own.get(i) && !pilgrimAt.get(i)) {
+						if (Vector.distanceSquared(locations.get(i), myLoc) <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
+							minAssigned = Math.min(minAssigned, pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))]);
+						}
+					}
 				}
 
-				if (own.get(i) && !pilgrimAt.get(i)
-					&& (pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))] == minAssigned)) {
-					if (Vector.distanceSquared(locations.get(i), myLoc) <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
-						int dir = selectDirectionTowardsLocation(locations.get(i));
-						if (dir != Vector.INVALID) {
-							myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
-							pilgrimAt.set(i, true);
-							pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))]++;
-							if (requestFarmHalf) {
-								sendFarmHalfLoc(locations.get(i));
+				for (int i = 0; i < locations.size(); i++) {
+
+					// If we don't know where castles are, only try the resources in the
+					// closest cluster, or we screw up on maps like 420
+					if (me.turn <= 3 &&
+						ResourceClusterSolver.assignedCluster(locations.get(i)) != ResourceClusterSolver.assignedCluster(locations.get(0))) {
+						continue;
+					}
+
+					if (own.get(i) && !pilgrimAt.get(i)
+						&& (pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(locations.get(i))] == minAssigned)) {
+						if (Vector.distanceSquared(locations.get(i), myLoc) <= Vector.distanceSquared(locations.get(i), Vector.opposite(myLoc, symmetryStatus))) {
+							int clusterId = ResourceClusterSolver.assignedCluster(locations.get(i));
+
+							// We send FARM_HALF if the unit is close <=> it should come home
+							// Don't bother with a bodyguard, cause the location is close
+							if (clusterId == ResourceClusterSolver.assignedCluster(myLoc)) {
+								int dir = selectDirectionTowardsLocation(locations.get(i));
+								if (dir != Vector.INVALID) {
+									myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
+									pilgrimAt.set(i, true);
+									pilgrimsBuilt++;
+									pilgrimsAtCluster[clusterId]++;
+									sendFarmHalfLoc(locations.get(i));
+									break;
+								}
 							} else {
-								sendAssignedLoc(locations.get(i));
+								// We need to send a bodyguard on ahead.
+
+								if (bodyguardAtCluster[clusterId]) {
+									int dir = selectDirectionTowardsLocation(locations.get(i));
+									if (dir != Vector.INVALID) {
+										myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
+										pilgrimAt.set(i, true);
+										pilgrimsBuilt++;
+										pilgrimsAtCluster[clusterId]++;
+										sendAssignedLoc(locations.get(i));
+										break;
+									}
+								} else {
+									int centroidLoc = ResourceClusterSolver.getCentroid(clusterId);
+
+									// Try to find a valid bodyguard location nearby
+									int destLoc = Vector.INVALID;
+									int minDist = Integer.MAX_VALUE;
+									for (int dx = -3; dx <= 3; ++dx) for (int dy = -3; dy <= 3; ++dy) if (dx != 0 || dy != 0) {
+										int dir = Vector.makeDirection(dx, dy);
+										int newLoc = Vector.add(centroidLoc, dir);
+										if (Vector.isOccupiable(newLoc) &&
+											!(Vector.get(newLoc, karboniteMap) || Vector.get(newLoc, fuelMap))) {
+
+											int dist = Vector.magnitude(dir);
+											if (dist < minDist) {
+												destLoc = newLoc;
+												minDist = dist;
+											}
+										}
+									}
+
+									if (destLoc == Vector.INVALID) {
+										// Well we're never gonna try and go here
+										// unless we pretend we built a bodyguard.
+										// Sooo... let's build a pilgrim and pretend
+										// everything is fine
+
+										int dir = selectDirectionTowardsLocation(locations.get(i));
+										if (dir != Vector.INVALID) {
+											myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
+											pilgrimAt.set(i, true);
+											pilgrimsBuilt++;
+											pilgrimsAtCluster[clusterId]++;
+											bodyguardAtCluster[clusterId] = true; // this is a lie but that's fine
+											sendAssignedLoc(locations.get(i));
+											break;
+										}
+									}
+
+									int dir = selectDirectionTowardsLocation(destLoc);
+									if (dir != Vector.INVALID) {
+										if (!canAffordToBuild(SPECS.PROPHET, false)) continue;
+										myAction = buildUnit(SPECS.PROPHET, Vector.getX(dir), Vector.getY(dir));
+										bodyguardAtCluster[clusterId] = true;
+										// Observation: Bodyguards are pretty much turtling units
+										// so this works fine.
+										sendAssignedLoc(destLoc);
+										break;
+									}
+								}
 							}
-							break;
 						}
 					}
 				}
@@ -1622,7 +1727,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (activated) {
 				activated = false;
-				
+
 				for (Robot r: visibleRobots) {
 					if (communications.isRadioing(r) && Vector.makeMapLocation(r.x, r.y) == myHome) {
 						int what = communications.readRadio(r);

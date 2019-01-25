@@ -22,10 +22,13 @@ class ResourceClusterSolver {
 
 	private static int[][] visited;
 	private static int clusterId;
+	private static LinkedList<Integer> clusterCentroid;
 
 	private static void initialise() {
 		inCluster = new LinkedList<>();
 		visited = new int[MyRobot.boardSize][MyRobot.boardSize];
+		clusterCentroid = new LinkedList<>();
+		clusterCentroid.add(Vector.INVALID);
 	}
 
 	private static void dfsAssignClusters(boolean[][] arr1, boolean[][] arr2, int loc) {
@@ -65,8 +68,11 @@ class ResourceClusterSolver {
 		for (Integer location: inCluster) {
 			val += Vector.distanceSquared(loc, location);
 		}
-		// Break ties by distance to self
-		val = val * 10000 + Vector.distanceSquared(loc, myLoc);
+		// // Break ties by distance to self
+		// Ties are broken by x / y now, so
+		// that different units get the same
+		// centroid.
+		val = val * 10000; // + Vector.distanceSquared(loc, myLoc);
 		return val;
 	}
 
@@ -77,6 +83,11 @@ class ResourceClusterSolver {
 	static int assignedCluster(int myLoc) {
 		if (visited == null) return 0;
 		return Vector.get(myLoc, visited);
+	}
+
+	static int getCentroid(int clusterId) {
+		if (visited == null) return Vector.INVALID;
+		return clusterCentroid.get(clusterId);
 	}
 
 	static int determineCentroid(boolean[][] map, boolean[][] arr1, boolean[][] arr2, int location, int myLoc) {
@@ -107,6 +118,9 @@ class ResourceClusterSolver {
 				}
 			}
 		}
+
+		clusterCentroid.add(bestCentroid);
+
 		return bestCentroid;
 	}
 }
