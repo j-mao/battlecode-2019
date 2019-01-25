@@ -349,12 +349,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (urgent) {
 				return fuel >= reqFuel && karbonite >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			}
-			return fuel >= reqFuel && karbonite-karboniteReserve() >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
+			return fuel-fuelReserve() >= reqFuel && karbonite-karboniteReserve() >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 		}
 
 		protected int karboniteReserve() {
 			if (me.turn < SPAM_CRUSADER_TURN_THRESHOLD) {
 				return 60;
+			}
+			return 0;
+		}
+
+		protected int fuelReserve() {
+			if (me.turn < SPAM_CRUSADER_TURN_THRESHOLD) {
+				return 100;
 			}
 			return 0;
 		}
@@ -715,7 +722,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected boolean shouldBuildTurtlingUnit(int unit) {
 			// Base probability of building a unit
 			double prob = 0.1 + myUnitWelfareChecker.proportionOfPilgrimsGivingToUs();
-			// Increase with karbonite stores
+			// Increase with karbonite stores, but not fuel stores since those can explode
 			int amCanBuild = (karbonite-karboniteReserve())/SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			amCanBuild = Math.min(amCanBuild, fuel/SPECS.UNITS[unit].CONSTRUCTION_FUEL);
 			prob *= (double)amCanBuild;
@@ -1005,7 +1012,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private NullAction checkToInitiateCircle() {
 
 			if (fuel >= fuelForCircle() && myUnitWelfareChecker.numFriendlyArmedUnits() >= requiredUnitsForCircle()) {
-				log("Initiating circle... " + me.turn);
 				return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
 			}
 			return null;
@@ -1593,7 +1599,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = new NullAction();
 			}
 
-			if (myAction == null) {
+			if (myAction == null && fuel >= fuelReserve()) {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc) || Vector.get(newLoc, mayBecomeAttacked) == me.turn) {
@@ -1713,17 +1719,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToAttack();
 			}
 
-			if (myAction == null) {
+			if (myAction == null && fuel >= fuelReserve()) {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, SPECS.UNITS[me.unit].SPEED,
-						(location) -> {
-							return location == assignedLoc;
-						},
-						(location) -> {
-							return isOccupiable(location) || location == assignedLoc;
-						}
+						(location) -> { return location == assignedLoc; },
+						(location) -> { return isOccupiable(location) || location == assignedLoc; }
 					);
 					dir = myBfsSolver.nextStep();
 					newLoc = Vector.add(myLoc, dir);
