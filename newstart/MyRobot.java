@@ -1614,6 +1614,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int oldLength = circleLocs.size();
 
 			if (activated) {
+				activated = false;
+				
 				for (Robot r: visibleRobots) {
 					if (communications.isRadioing(r) && Vector.makeMapLocation(r.x, r.y) == myHome) {
 						int what = communications.readRadio(r);
@@ -1634,9 +1636,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
 						if (loc != Vector.INVALID) {
 							circleLocs.add(loc);
-							if (Vector.makeMapLocation(r.x, r.y) == myHome) {
-								activated = true;
-							}
+							activated = true;
 						}
 					}
 				}
