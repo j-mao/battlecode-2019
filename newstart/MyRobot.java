@@ -1245,7 +1245,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						// Also, these guys are close, meh, they probably don't need a bodyguard
 						sendFarmHalfLoc(bestLoc);
 
-						break;
 					}
 				}
 			} else {
@@ -1315,7 +1314,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 									for (int dx = -3; dx <= 3; ++dx) for (int dy = -3; dy <= 3; ++dy) if (dx != 0 || dy != 0) {
 										int dir = Vector.makeDirection(dx, dy);
 										int newLoc = Vector.add(centroidLoc, dir);
-										if (Vector.isOccupiable(newLoc) &&
+										if (isOccupiable(newLoc) &&
 											!(Vector.get(newLoc, karboniteMap) || Vector.get(newLoc, fuelMap))) {
 
 											int dist = Vector.magnitude(dir);
