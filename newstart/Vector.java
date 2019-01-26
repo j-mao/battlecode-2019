@@ -81,6 +81,10 @@ class Vector {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
 
+	static void set(int mapLoc, double[][] arr, double value) {
+		arr[getY(mapLoc)][getX(mapLoc)] = value;
+	}
+
 	static <T> void set(int mapLoc, T[][] arr, T value) {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
@@ -90,6 +94,10 @@ class Vector {
 	}
 
 	static int get(int mapLoc, int[][] arr) {
+		return arr[getY(mapLoc)][getX(mapLoc)];
+	}
+
+	static double get(int mapLoc, double[][] arr) {
 		return arr[getY(mapLoc)][getX(mapLoc)];
 	}
 

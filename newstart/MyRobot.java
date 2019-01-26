@@ -439,16 +439,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		 * Run this to free all locations occupied by fighting units in preparation for a circle attack
 		 * @return A list of locations whose assigned units have been dispatched
 		 */
-		LinkedList<Integer> purgeForCircleAttack(int shedRadius, TreeMap<Integer, Integer> structures) {
+		LinkedList<Integer> purgeForCircleAttack(int shedRadius, TreeMap<Integer, Integer> structures, double[][] penalties) {
 
 			relieved.clear();
 			for (Integer assignedUnit: assignments.keySet()) {
 				if (isArmed(unitType[assignedUnit]) && unitType[assignedUnit] != SPECS.CASTLE) {
 					int assignment = assignments.get(assignedUnit);
-					int thisDist = Integer.MAX_VALUE;
-					for (Integer structure: structures.keySet()) {
-						thisDist = Math.min(thisDist, Vector.distanceSquared(assignment, structures.get(structure)));
-					}
+					int thisDist = (int) Vector.get(assignment, penalties);
 					if (thisDist >= shedRadius) {
 						if (assignment != Vector.INVALID) {
 							relieved.add(assignment);
@@ -559,6 +556,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					result = Math.max(result, Vector.distanceSquared(myLoc, mapLoc));
 				}
 			}
+			return result;
+		}
+
+		protected double calculateTurtlePenalty(int location, int reference, LinkedList<Integer> targetLocs) {
+			// This is what happens when you dump math onto a sheet of paper
+			// You get ridiculous-looking graphs that seem to make sense
+			// https://www.desmos.com/calculator/3niwqey33h
+
+			final double w1 = 0.125, w2 = 1, w3 = 0.25, w4 = 0.01, base = 1.5;
+			double result = 0;
+			for (Integer target: targetLocs) {
+				result += w1 * Math.sqrt(Vector.distanceSquared(location, reference));
+				result += w2 * Math.abs(Math.sqrt(Vector.distanceSquared(location, target)) - Math.sqrt(Vector.distanceSquared(reference, target)));
+				result += w3 * Math.sqrt(Vector.distanceSquared(location, target));
+				result += w4 * Math.pow(base, Math.sqrt(Vector.distanceSquared(location, reference)) - Math.sqrt(Vector.distanceSquared(location, target)));
+			}
+
 			return result;
 		}
 	}
@@ -864,6 +878,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private LinkedList<Integer> availableTurtles;
 		private int turtleLocationMod;
 		private int previousTurtleStructureId;
+		private double[][] penaltyForTurtlingRobot;
 
 		// Ignores pilgrim deaths.
 		private int pilgrimsBuilt;
@@ -928,6 +943,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			availableTurtles = new LinkedList<>();
 			previousTurtleStructureId = me.id;
+			penaltyForTurtlingRobot = new double[boardSize][boardSize];
 		}
 
 		@Override
@@ -1018,11 +1034,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (assignment == Vector.INVALID) {
 						continue;
 					}
-					int thisDist = Integer.MAX_VALUE;
-					for (Integer structure: structures.keySet()) {
-						thisDist = Math.min(thisDist, Vector.distanceSquared(assignment, structures.get(structure)));
-					}
-					dists.add(thisDist);
+					dists.add((int) Vector.get(assignment, penaltyForTurtlingRobot));
 				}
 			}
 			Collections.sort(dists, new Vector.SortIncreasingInteger());
@@ -1030,7 +1042,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private void circleExecutePurge(int shedRadius) {
-			for (Integer relieved: myUnitWelfareChecker.purgeForCircleAttack(shedRadius, structures)) {
+			for (Integer relieved: myUnitWelfareChecker.purgeForCircleAttack(shedRadius, structures, penaltyForTurtlingRobot)) {
 				if (isGoodTurtlingLocation(relieved)) {
 					availableTurtles.add(relieved);
 				}
@@ -1436,32 +1448,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return (Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == turtleLocationMod;
 		}
 
-		private double calculateTurtlePenalty(int location, int reference) {
-			// This is what happens when you dump math onto a sheet of paper
-			// You get ridiculous-looking graphs that seem to make sense
-			// https://www.desmos.com/calculator/3niwqey33h
-
-			final double w1 = 0.125, w2 = 1, w3 = 0.25, w4 = 0.01, base = 1.5;
-			double result = 0;
-			for (Integer castle: castles.keySet()) {
-				int enemyCastleLoc = Vector.opposite(castles.get(castle), symmetryStatus);
-				result += w1 * Math.sqrt(Vector.distanceSquared(location, reference));
-				result += w2 * Math.abs(Math.sqrt(Vector.distanceSquared(location, enemyCastleLoc)) - Math.sqrt(Vector.distanceSquared(reference, enemyCastleLoc)));
-				result += w3 * Math.sqrt(Vector.distanceSquared(location, enemyCastleLoc));
-				result += w4 * Math.pow(base, Math.sqrt(Vector.distanceSquared(location, reference)) - Math.sqrt(Vector.distanceSquared(location, enemyCastleLoc)));
-			}
-
-			return result;
-		}
-
 		private int pollBestTurtleLocation(int reference) {
 			if (availableTurtles.isEmpty()) {
 				return Vector.INVALID;
 			}
 			int bestIdx = 0;
-			double bestPenalty = calculateTurtlePenalty(availableTurtles.get(0), reference);
+			LinkedList<Integer> enemyCastles = new LinkedList<>();
+			for (Integer castle: castles.keySet()) {
+				enemyCastles.add(Vector.opposite(castles.get(castle), symmetryStatus));
+			}
+			double bestPenalty = calculateTurtlePenalty(availableTurtles.get(0), reference, enemyCastles);
 			for (int i = 1; i < availableTurtles.size(); i++) {
-				double alt = calculateTurtlePenalty(availableTurtles.get(i), reference);
+				double alt = calculateTurtlePenalty(availableTurtles.get(i), reference, enemyCastles);
 				if (alt < bestPenalty) {
 					bestIdx = i;
 					bestPenalty = alt;
@@ -1469,6 +1467,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			int bestLoc = availableTurtles.get(bestIdx);
 			removeIndexFromList(availableTurtles, bestIdx);
+			Vector.set(bestLoc, penaltyForTurtlingRobot, bestPenalty);
 			return bestLoc;
 		}
 
@@ -1748,6 +1747,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private LinkedList<Integer> circleLocs;
 		private boolean activated;
+		private int circleShedPenalty;
 		private int assignedLoc;
 		private int myCentroidLoc;
 
@@ -1756,6 +1756,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			circleLocs = new LinkedList<>();
 			activated = false;
+			circleShedPenalty = -1;
 			int data = communications.readAssignmentDatapack();
 			if (data != Vector.INVALID) {
 				assignedLoc = communications.datapackGetLocation(data);
@@ -1805,10 +1806,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (communications.isRadioing(r) && Vector.makeMapLocation(r.x, r.y) == myHome) {
 						int what = communications.readRadio(r);
 						if ((what & 0xf000) == (Communicator.SHED_RADIUS & 0xf000)) {
-							if (Vector.distanceSquared(assignedLoc, myHome) >= (what & 0x0fff)) {
-								mySpecificRobotController = new CircleRobotController(circleLocs, myHome);
-								return mySpecificRobotController.runSpecificTurn();
-							}
+							circleShedPenalty = what & 0x0fff;
 						}
 					}
 				}
@@ -1828,10 +1826,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (!activated) {
+				if (circleShedPenalty != -1) {
+					if (calculateTurtlePenalty(assignedLoc, myCentroidLoc, circleLocs) >= circleShedPenalty) {
+						mySpecificRobotController = new CircleRobotController(circleLocs, myHome);
+						return mySpecificRobotController.runSpecificTurn();
+					}
+				}
 				// Clear out old messages
 				for (int i = 0; i < oldLength; i++) {
 					circleLocs.pollFirst();
 				}
+				circleShedPenalty = -1;
 			}
 			return null;
 		}
@@ -1882,9 +1887,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			clock++;
 
-			if (clock == 2) {
-				checkForAnyExtraCircles();
-			}
 			checkForCircleSuccess();
 
 			Action myAction = null;
@@ -1910,20 +1912,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			return myAction;
-		}
-
-		private void checkForAnyExtraCircles() {
-			for (Robot r: visibleRobots) {
-				if (communications.isRadioing(r)) {
-					int what = communications.readRadio(r);
-					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000)) {
-						int loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
-						if (loc != Vector.INVALID) {
-							circleLocs.add(loc);
-						}
-					}
-				}
-			}
 		}
 
 		private void checkForCircleSuccess() {
