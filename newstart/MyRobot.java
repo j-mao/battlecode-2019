@@ -592,6 +592,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			circleInitiated = false;
 
+			int mod0AdjResources = 0, mod1AdjResources = 0;
+			for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) {
+				int loc = Vector.add(myLoc, Vector.makeDirection(dx, dy));
+				if (loc == Vector.INVALID || !Vector.get(loc, map) || Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap)) {
+					if ((Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == 0) {
+						mod0AdjResources++;
+					} else {
+						mod1AdjResources++;
+					}
+				}
+			}
+			if (mod0AdjResources >= mod1AdjResources) {
+				turtleLocationMod = 0;
+			} else {
+				turtleLocationMod = 1;
+			}
+			
 			availableTurtles = new LinkedList<>();
 			int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
 			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
@@ -607,23 +624,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			structures = new TreeMap<>();
 			structures.put(me.id, myLoc);
-
-			int mod0AdjResources = 0, mod1AdjResources = 0;
-			for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) {
-				int loc = Vector.add(myLoc, Vector.makeDirection(dx, dy));
-				if (loc == Vector.INVALID || !Vector.get(loc, map) || Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap)) {
-					if ((Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == 0) {
-						mod0AdjResources++;
-					} else {
-						mod1AdjResources++;
-					}
-				}
-			}
-			if (mod0AdjResources <= mod1AdjResources) {
-				turtleLocationMod = 0;
-			} else {
-				turtleLocationMod = 1;
-			}
 		}
 
 		protected abstract boolean isGoodTurtlingLocation(int loc);
