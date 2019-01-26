@@ -74,6 +74,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		mayBecomeAttacked = new int[boardSize][boardSize];
 		isAttacked = new int[boardSize][boardSize];
 
+		for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
+			if (karboniteMap[j][i]) {
+				int loc = Vector.makeMapLocation(i, j);
+				if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc);
+			}
+			if (fuelMap[j][i]) {
+				int loc = Vector.makeMapLocation(i, j);
+				if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc);
+			}
+		}
+
 		if (me.unit == SPECS.CASTLE) {
 			mySpecificRobotController = new CastleController();
 		} else if (me.unit == SPECS.CHURCH) {
@@ -142,12 +153,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private abstract class Communicator {
 
-		// Bitmasks for different radio broadcast commands
-		static final int FARM_HALF = 0x1000;
-		static final int ASSIGN = 0x2000;
-		static final int ATTACK = 0x3000;
-		static final int CIRCLE_SUCCESS = 0x4000;
-		static final int SHED_RADIUS = 0x5000;
+		// Signal radii for short-range radio commands
+		static final int ASSIGN = 2;
+		static final int FARM_HALF = 3;
+
+		// Bitmasks for long-range radio commands
+		static final int ATTACK = 0x1000;
+		static final int SHED_RADIUS = 0x2000;
+		static final int CIRCLE_SUCCESS = 0x3000;
 
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
@@ -167,28 +180,34 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return MyRobot.this.isRadioing(r) && r.id != me.id;
 		}
 
-		final int readFarmHalfLoc() {
+		final int readFarmHalfDatapack() {
 			for (Robot r: visibleRobots) {
-				if (isVisible(r) && isFriendlyStructure(r) && isRadioing(r) && r.signal_radius == 2) {
-					int msg = readRadio(r);
-					if ((msg & 0xf000) == (FARM_HALF & 0xf000)) {
-						return Vector.makeMapLocationFromCompressed(msg & 0x0fff);
-					}
+				if (isVisible(r) && isFriendlyStructure(r) && isRadioing(r) && r.signal_radius == FARM_HALF) {
+					return readRadio(r);
 				}
 			}
 			return Vector.INVALID;
 		}
 
-		final int readAssignedLoc() {
+		final int readAssignmentDatapack() {
 			for (Robot r: visibleRobots) {
-				if (isVisible(r) && isFriendlyStructure(r) && isRadioing(r) && r.signal_radius == 2) {
-					int msg = readRadio(r);
-					if ((msg & 0xf000) == (ASSIGN & 0xf000)) {
-						return Vector.makeMapLocationFromCompressed(msg & 0x0fff);
-					}
+				if (isVisible(r) && isFriendlyStructure(r) && isRadioing(r) && r.signal_radius == ASSIGN) {
+					return readRadio(r);
 				}
 			}
 			return Vector.INVALID;
+		}
+
+		final int createDatapack(int location, int clusterId) {
+			return Vector.compress(location) | (clusterId << 12);
+		}
+
+		final int datapackGetLocation(int data) {
+			return Vector.makeMapLocationFromCompressed(data & 0x0fff);
+		}
+
+		final int datapackGetClusterId(int data) {
+			return data >> 12;
 		}
 	}
 
@@ -465,6 +484,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected final int SPAM_CRUSADER_TURN_THRESHOLD = SPECS.MAX_ROUNDS-10;
 
 		protected int myCastleTalk;
+		protected int myClusterId;
 
 		SpecificRobotController() {
 			myCastleTalk = 0;
@@ -577,6 +597,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			ownStructure = new boolean[SPECS.MAX_ID+1];
 			structures.put(me.id, myLoc);
 			ownStructure[me.id] = true;
+
+			myClusterId = 0;
+			int minDist = Integer.MAX_VALUE;
+			for (int i = 0; i < boardSize; ++i) for (int j = 0; j < boardSize; ++j) {
+				int loc = Vector.makeMapLocation(i, j);
+				if (!ResourceClusterSolver.isAssigned(loc)) continue;
+
+				int dist = Vector.distanceSquared(myLoc, loc);
+				if (dist > minDist) continue;
+
+				myClusterId = ResourceClusterSolver.assignedCluster(loc);
+				minDist = dist;
+			}
 		}
 
 		protected void sendStructureLocation() {
@@ -587,12 +620,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
-		protected void sendFarmHalfLoc(int location) {
-			communications.sendRadio(Vector.compress(location) | Communicator.FARM_HALF, 2);
+		protected void sendFarmHalfLoc(int location, int clusterId) {
+			communications.sendRadio(communications.createDatapack(location, clusterId), Communicator.FARM_HALF);
 		}
 
-		protected void sendAssignedLoc(int location) {
-			communications.sendRadio(Vector.compress(location) | Communicator.ASSIGN, 2);
+		protected void sendAssignedLoc(int location, int clusterId) {
+			communications.sendRadio(communications.createDatapack(location, clusterId), Communicator.ASSIGN);
 		}
 
 		protected BuildAction buildInResponseToNearbyEnemies() {
@@ -653,7 +686,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					return null;
 				}
 				myAction = buildUnit(toBuild, Vector.getX(dir), Vector.getY(dir));
-				sendAssignedLoc(closestEnemy);
+				sendAssignedLoc(closestEnemy, myClusterId);
 			}
 
 			return myAction;
@@ -827,7 +860,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int[] pilgrimsAtCluster;
 		private boolean[] bodyguardAtCluster;
-		private int myClusterId;
 
 		private LinkedList<Integer> availableTurtles;
 		private int turtleLocationMod;
@@ -862,32 +894,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
 				if (karboniteMap[j][i]) {
-					int loc = Vector.makeMapLocation(i, j);
-					karboniteLocs.add(loc);
+					karboniteLocs.add(Vector.makeMapLocation(i, j));
 					pilgrimAtKarbonite.add(false);
-					// Doesn't retain centroid information for now.
-					if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc, myLoc);
 				}
 				if (fuelMap[j][i]) {
-					int loc = Vector.makeMapLocation(i, j);
-					fuelLocs.add(loc);
+					fuelLocs.add(Vector.makeMapLocation(i, j));
 					pilgrimAtFuel.add(false);
-					// Doesn't retain centroid information for now.
-					if (!ResourceClusterSolver.isAssigned(loc)) ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, loc, myLoc);
 				}
-			}
-
-			myClusterId = 0;
-			int minDist = Integer.MAX_VALUE;
-			for (int i = 0; i < boardSize; ++i) for (int j = 0; j < boardSize; ++j) {
-				int loc = Vector.makeMapLocation(i, j);
-				if (!ResourceClusterSolver.isAssigned(loc)) continue;
-
-				int dist = Vector.distanceSquared(myLoc, loc);
-				if (dist > minDist) continue;
-
-				myClusterId = ResourceClusterSolver.assignedCluster(loc);
-				minDist = dist;
 			}
 
 			karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
@@ -970,14 +983,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		@Override
-		protected void sendFarmHalfLoc(int location) {
-			communications.sendRadio(Vector.compress(location) | Communicator.FARM_HALF, 2);
+		protected void sendFarmHalfLoc(int location, int clusterId) {
+			communications.sendRadio(communications.createDatapack(location, clusterId), Communicator.FARM_HALF);
 			myUnitWelfareChecker.recordNewAssignment(location);
 		}
 
 		@Override
-		protected void sendAssignedLoc(int location) {
-			communications.sendRadio(Vector.compress(location) | Communicator.ASSIGN, 2);
+		protected void sendAssignedLoc(int location, int clusterId) {
+			communications.sendRadio(communications.createDatapack(location, clusterId), Communicator.ASSIGN);
 			myUnitWelfareChecker.recordNewAssignment(location);
 		}
 
@@ -1238,7 +1251,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						pilgrimsAtCluster[ResourceClusterSolver.assignedCluster(bestLoc)]++;
 						// We send FARM_HALF if the unit is close <=> it should come home
 						// Also, these guys are close, meh, they probably don't need a bodyguard
-						sendFarmHalfLoc(bestLoc);
+						sendFarmHalfLoc(bestLoc, ResourceClusterSolver.assignedCluster(bestLoc));
 
 					}
 				}
@@ -1284,7 +1297,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 									pilgrimAt.set(i, true);
 									pilgrimsBuilt++;
 									pilgrimsAtCluster[clusterId]++;
-									sendFarmHalfLoc(locations.get(i));
+									sendFarmHalfLoc(locations.get(i), clusterId);
 									break;
 								}
 							} else {
@@ -1297,7 +1310,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 										pilgrimAt.set(i, true);
 										pilgrimsBuilt++;
 										pilgrimsAtCluster[clusterId]++;
-										sendAssignedLoc(locations.get(i));
+										sendAssignedLoc(locations.get(i), clusterId);
 										break;
 									}
 								} else {
@@ -1333,7 +1346,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 											pilgrimsBuilt++;
 											pilgrimsAtCluster[clusterId]++;
 											bodyguardAtCluster[clusterId] = true; // this is a lie but that's fine
-											sendAssignedLoc(locations.get(i));
+											sendAssignedLoc(locations.get(i), clusterId);
 											break;
 										}
 									}
@@ -1345,7 +1358,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 										bodyguardAtCluster[clusterId] = true;
 										// Observation: Bodyguards are pretty much turtling units
 										// so this works fine.
-										sendAssignedLoc(destLoc);
+										sendAssignedLoc(destLoc, clusterId);
 										break;
 									}
 								}
@@ -1403,7 +1416,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int buildDir = selectDirectionTowardsLocation(turtleLoc);
 				if (buildDir != Vector.INVALID) {
 					BuildAction myAction = buildUnit(unit, Vector.getX(buildDir), Vector.getY(buildDir));
-					sendAssignedLoc(turtleLoc);
+					if (structureLoc == myLoc) {
+						sendAssignedLoc(turtleLoc, myClusterId); // It is me
+					} else {
+						sendAssignedLoc(turtleLoc, ResourceClusterSolver.assignedCluster(structureLoc)); // It is a church
+					}
 					return myAction;
 				} else {
 					availableTurtles.add(turtleLoc); // put it back in
@@ -1552,17 +1569,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		PilgrimController() {
 			super();
 
-			assignedLoc = communications.readFarmHalfLoc();
-			if (assignedLoc != Vector.INVALID) {
+			int data = communications.readFarmHalfDatapack();
+			if (data != Vector.INVALID) {
 				farmHalfQty = 2;
 				farmHalf = true;
 			} else {
-				assignedLoc = communications.readAssignedLoc();
+				data = communications.readAssignmentDatapack();
 				farmHalfQty = 0;
 				farmHalf = false;
 			}
+			assignedLoc = communications.datapackGetLocation(data);
+			myClusterId = communications.datapackGetClusterId(data);
 
-			churchLoc = ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, assignedLoc, myHome);
+			churchLoc = ResourceClusterSolver.getCentroid(myClusterId);
 			churchBuilt = false;
 
 			if (Vector.distanceSquared(churchLoc, myHome) <= 25) {
@@ -1730,13 +1749,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private LinkedList<Integer> circleLocs;
 		private boolean activated;
 		private int assignedLoc;
+		private int myCentroidLoc;
 
 		TurtlingRobotController() {
 			super();
 
 			circleLocs = new LinkedList<>();
 			activated = false;
-			assignedLoc = communications.readAssignedLoc();
+			int data = communications.readAssignmentDatapack();
+			if (data != Vector.INVALID) {
+				assignedLoc = communications.datapackGetLocation(data);
+				myClusterId = communications.datapackGetClusterId(data);
+				myCentroidLoc = ResourceClusterSolver.getCentroid(myClusterId);
+			}
 		}
 
 		@Override
