@@ -1772,6 +1772,41 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 				if (dir != Vector.INVALID && isOccupiable(newLoc)) {
 					myAction = move(Vector.getX(dir), Vector.getY(dir));
+				} else if (Vector.get(myLoc, karboniteMap) || Vector.get(myLoc, fuelMap)) {
+					// Well we tried to move and failed.
+					// Nothing else to do, so let's get off resource squares.
+					for (int d: dirs) {
+						int loc = Vector.add(myLoc, d);
+						if (isOccupiable(loc) &&
+							!(Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap))) {
+
+							myAction = move(Vector.getX(d), Vector.getY(d));
+							break;
+						}
+					}
+
+					// If we still failed... rand walk
+					if (myAction == null) {
+						int numAvailable = 0;
+						for (int d: dirs) {
+							int loc = Vector.add(myLoc, d);
+							if (isOccupiable(loc)) numAvailable++;
+						}
+
+						if (numAvailable != 0) {
+							int ind = rng.nextInt() % numAvailable;
+
+							for (int d: dirs) {
+								int loc = Vector.add(myLoc, d);
+								if (!isOccupiable(loc)) continue;
+								if (numAvailable == 0) {
+									myAction = move(Vector.getX(d), Vector.getY(d));
+									break;
+								}
+								numAvailable--;
+							}
+						}
+					}
 				}
 			}
 
@@ -1840,6 +1875,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private final double squeezeConst;
 		private final int numSqueezeRounds;
 
+		private static final double CIRCLE_EPSILON = 0.5;
+
+		private double minSminDist;
+
 		private TreeSet<Integer> circleLocs;
 		private int clock;
 
@@ -1855,9 +1894,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			initialSqueezeRate = boardSize / 64.;
 			finalSqueezeRate = 0.05;
 
-			initialRadius = boardSize;
+			initialRadius = (int) (1.42 * boardSize);
 			squeezeConst = (finalSqueezeRate * finalSqueezeRate - initialSqueezeRate * initialSqueezeRate) / (2 * initialRadius);
 			numSqueezeRounds = (int) Math.round(2 * initialRadius / (initialSqueezeRate + finalSqueezeRate));
+
+			minSminDist = 0;
 		}
 
 		@Override
@@ -1870,18 +1911,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			checkForCircleSuccess();
 
+			calculateSminDists();
+
 			Action myAction = null;
 
 			if (myAction == null) {
 				myAction = tryToAttack();
 			}
 
-			if (myAction == null && !onEdgeOfCircle(myLoc)) {
+			if (myAction == null && !isPrettyGoodCircleLocation(myLoc)) {
 				int dir = myBfsSolver.nextStep();
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, 2,
-						(location) -> { return onEdgeOfCircle(location); },
+						(location) -> { return isPrettyGoodCircleLocation(location); },
 						(location) -> { return isOccupiable(location); }
 					);
 					dir = myBfsSolver.nextStep();
@@ -1937,13 +1980,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
-		private int getCircleRadius() {
+		private double getCircleRadius() {
 			if (clock > numSqueezeRounds) return 1;
 			double rad = initialRadius - initialSqueezeRate * clock - 0.5 * squeezeConst * clock * clock;
 			if (me.unit == SPECS.PREACHER || me.unit == SPECS.CRUSADER) {
 				rad -= 4.0; // Untested
 			}
-			return (int)Math.max(Math.round(rad), 1);
+			return Math.max(rad, 1);
 		}
 
 		private double sminDistance(int queryLoc) {
@@ -1954,14 +1997,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return -Math.log(total) / 0.4;
 		}
 
-		private boolean onEdgeOfCircle(Integer queryLoc) {
-			for (int d: dirs) {
-				int loc = Vector.add(queryLoc, d);
-				if (loc != Vector.INVALID && sminDistance(loc) < getCircleRadius()) {
-					return true;
-				}
+		private void calculateSminDists() {
+			// A good circle location is a location that is either:
+			// a) inside the circle
+			// b) "closer" to the enemy than any visible location
+			//    that is outside the circle and unoccupied
+
+			double rad = getCircleRadius();
+			minSminDist = 1e9;
+
+			int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
+			for (int i = -maxDispl; i <= maxDispl; ++i) for (int j = -maxDispl; j <= maxDispl; ++j) {
+				int dir = Vector.makeDirection(i, j);
+				if (Vector.magnitude(dir) > SPECS.UNITS[me.unit].VISION_RADIUS) continue;
+
+				int loc = Vector.add(myLoc, dir);
+				if (!isOccupiable(loc)) continue;
+
+				double locDist = sminDistance(loc);
+				if (locDist < minSminDist && locDist > rad) minSminDist = locDist;
 			}
-			return false;
+		}
+
+		private boolean isPrettyGoodCircleLocation(int loc) {
+			if ((loc != myLoc && !isOccupiable(loc)) || Vector.get(loc, visibleRobotMap) == -1) return false;
+			return sminDistance(loc) <= minSminDist + CIRCLE_EPSILON;
 		}
 	}
 }
