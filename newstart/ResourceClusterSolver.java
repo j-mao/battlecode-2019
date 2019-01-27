@@ -63,16 +63,11 @@ class ResourceClusterSolver {
 		}
 	}
 
-	private static int findCentroidValue(int loc, int myLoc) {
+	private static int findCentroidValue(int loc) {
 		int val = 0;
 		for (Integer location: inCluster) {
 			val += Vector.distanceSquared(loc, location);
 		}
-		// // Break ties by distance to self
-		// Ties are broken by x / y now, so
-		// that different units get the same
-		// centroid.
-		val = val * 10000; // + Vector.distanceSquared(loc, myLoc);
 		return val;
 	}
 
@@ -90,7 +85,7 @@ class ResourceClusterSolver {
 		return clusterCentroid.get(clusterId);
 	}
 
-	static int determineCentroid(boolean[][] map, boolean[][] arr1, boolean[][] arr2, int location, int myLoc) {
+	static int determineCentroid(boolean[][] map, boolean[][] arr1, boolean[][] arr2, int location) {
 		if (visited == null) {
 			initialise();
 		}
@@ -110,7 +105,7 @@ class ResourceClusterSolver {
 			for (int y = currentClusterMinY-1; y <= currentClusterMaxY+1; y++) {
 				int loc = Vector.makeMapLocation(x, y);
 				if (loc != Vector.INVALID && Vector.get(loc, map) && !Vector.get(loc, arr1) && !Vector.get(loc, arr2)) {
-					int centroidValue = findCentroidValue(loc, myLoc);
+					int centroidValue = findCentroidValue(loc);
 					if (centroidValue < bestCentroidValue) {
 						bestCentroid = loc;
 						bestCentroidValue = centroidValue;
@@ -118,6 +113,7 @@ class ResourceClusterSolver {
 				}
 			}
 		}
+		Vector.set(bestCentroid, visited, clusterId);
 
 		clusterCentroid.add(bestCentroid);
 
