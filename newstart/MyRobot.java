@@ -1171,6 +1171,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (loc == Vector.opposite(myLoc, symmetryStatus)) {
 							oppositeCastleIsDestroyed = true;
 						}
+						removeIndexFromList(enemyTargets, enemyTargets.indexOf(loc));
 					}
 				}
 			}
