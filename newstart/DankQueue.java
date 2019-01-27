@@ -46,6 +46,15 @@ class DankQueue<T> {
 		return true;
 	}
 
+	boolean addFront(T e) {
+		int newl = l-1;
+		if (newl == -1) newl = ln-1;
+		if (newl == r) return false;
+		buf[newl] = e;
+		l = newl;
+		return true;
+	}
+
 	T peek() {
 		if (l == r) {
 			return null;

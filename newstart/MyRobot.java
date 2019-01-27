@@ -610,8 +610,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected TreeMap<Integer, Integer> structures;
 		protected LinkedList<Integer> enemyTargets;
 
+		protected BoardSymmetryType symmetryStatus;
+
 		StructureController() {
 			super();
+
+			symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
 
 			CIRCLE_BUILD_REDUCTION_BASE = 1.25;
 			CIRCLE_BUILD_REDUCTION_MEDIAN = boardSize / 2;
@@ -1563,12 +1567,41 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int myCastle;
 
+		private static final boolean lesserSide = false;
+		private static final boolean greaterSide = true;
+		private boolean ourSide; 
+		private int pilgrimsLesserSide, pilgrimsGreaterSize;
+		DankQueue<Integer> resourcesToGivePilgrims;
+		TreeMap<Integer, Integer> myAssignedPilgrims;
+		private int justBuiltPilgrimLoc;
+
 		ChurchController() {
 			super();
 
 			myCastle = communications.readCastleLoc();
 			enemyTargets.add(Vector.opposite(myCastle, symmetryStatus));
 			generateTurtleLocations();
+
+			// Add nearby resources to the queue resourcesToGivePilgrims in sorted order
+			LinkedList<Integer> resourceLocs = new LinkedList<>();
+			for (int dx = -8; dx <= 8; dx++) for (int dy = -8; dy <= 8; dy++) {
+				int newLoc = Vector.add(myLoc, Vector.makeDirection(dx, dy));
+				if (newLoc != Vector.INVALID) {
+					if (Vector.get(newLoc, karboniteMap) || Vector.get(newLoc, fuelMap)) {
+						resourceLocs.add(newLoc);
+					} 
+				}
+			} 
+			resourceLocs.sort(new Vector.SortByDistance(myLoc));
+			Iterator<Integer> iterator = resourceLocs.iterator();
+			resourcesToGivePilgrims = new DankQueue(resourceLocs.size());
+			while (iterator.hasNext()) {
+				resourcesToGivePilgrims.add(iterator.next());
+			}
+
+			justBuiltPilgrimLoc = Vector.INVALID;
+
+			myAssignedPilgrims = new TreeMap<>();
 		}
 
 		@Override
@@ -1576,6 +1609,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			sendStructureLocation();
 			checkTurtleWelfare();
+			determineOurSide();
+			notePositionOfNewPilgrim();
+			checkForDeadAssignedPilgrims();
 
 			Action myAction = null;
 
@@ -1585,6 +1621,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				myAction = buildInResponseToNearbyEnemies();
+			}
+
+			if (myAction == null) {
+				myAction = tryToCreatePilgrimOnOtherSide();
 			}
 
 			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD && canAffordToBuild(SPECS.CRUSADER, false)) {
@@ -1631,6 +1671,69 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					availableTurtles.add(location);
 				}
 			}
+		}
+
+		private BuildAction tryToCreatePilgrimOnOtherSide() { 
+			if (!canAffordToBuild(SPECS.PILGRIM, false)) return null;
+			if (resourcesToGivePilgrims.isEmpty()) return null;
+			if (Vector.distanceSquared(resourcesToGivePilgrims.peek(), myLoc) > closestDisToGivePilgrim()) return null;
+			if ((ourSide == lesserSide && Vector.isOnLesserSide(resourcesToGivePilgrims.peek(), symmetryStatus)) ||
+				(ourSide == greaterSide && Vector.isOnGreaterSide(resourcesToGivePilgrims.peek(), symmetryStatus))) {
+				resourcesToGivePilgrims.poll();
+				return tryToCreatePilgrimOnOtherSide();
+			}
+			BuildAction myAction = null;
+			int resourceLoc = resourcesToGivePilgrims.peek();
+			int dir = selectDirectionTowardsLocation(resourceLoc);
+			if (dir != Vector.INVALID) {
+				resourcesToGivePilgrims.poll();
+				myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
+				justBuiltPilgrimLoc = resourceLoc;
+				sendAssignedLoc(resourceLoc);
+			}
+			return myAction;
+		}
+
+		private void notePositionOfNewPilgrim() {
+			if (justBuiltPilgrimLoc == Vector.INVALID) return;
+			for (Robot r : visibleRobots) {
+				if (isVisible(r) && r.team == me.team && r.unit == SPECS.PILGRIM && r.turn == 1 && 
+					Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 9) {
+					myAssignedPilgrims.put(r.id, justBuiltPilgrimLoc);
+				}
+			}
+			justBuiltPilgrimLoc = Vector.INVALID;
+		}
+
+		private void checkForDeadAssignedPilgrims() {
+			for (Integer assignedPilgrim: myAssignedPilgrims.keySet()) { 
+				if (getRobot(assignedPilgrim) == null) {
+					// RIP pilgrim
+					resourcesToGivePilgrims.addFront(myAssignedPilgrims.get(assignedPilgrim));
+					myAssignedPilgrims.remove(assignedPilgrim);
+				}
+			}
+		}
+
+		private void determineOurSide() {
+			if (me.turn > 50) return;
+			for (Robot r : visibleRobots) {
+				if (isVisible(r) && r.team == me.team && r.unit == SPECS.PILGRIM) {
+					int loc = Vector.makeMapLocation(r.x, r.y);
+					if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap)) {
+						if (Vector.isOnLesserSide(loc, symmetryStatus)) pilgrimsLesserSide++;
+						if (Vector.isOnGreaterSide(loc, symmetryStatus)) pilgrimsGreaterSize++;
+					}
+				}
+			}
+			if (pilgrimsLesserSide >= pilgrimsGreaterSize) ourSide = lesserSide;
+			else ourSide = greaterSide;
+		}
+
+		private int closestDisToGivePilgrim() {
+			if (me.turn <= 50) return 0;
+			if (me.turn < 100) return 9;
+			else return 25;
 		}
 	}
 

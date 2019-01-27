@@ -53,6 +53,30 @@ class Vector {
 		return ((magnitude(mapLocB - mapLocA) + 1) >> 1) == 1;
 	}
 
+	// Lesser side of the board is side with X (or Y, depending on symmetry) coords < boardsize/2, including the middle
+	static boolean isOnLesserSide(int mapLoc, BoardSymmetryType symm) {
+		switch (symm) {
+			case HORIZONTAL: 
+				return getY(mapLoc) < (int)(Math.ceil((double)MyRobot.boardSize / 2.0));
+			case VERTICAL: 
+				return getX(mapLoc) < (int)(Math.ceil((double)MyRobot.boardSize / 2.0));
+			default:
+				return true;
+		}
+	}
+
+	// Greater side of the board is side with X (or Y, depending on symmetry) coords > boardsize/2, including the middle
+	static boolean isOnGreaterSide(int mapLoc, BoardSymmetryType symm) {
+		switch (symm) {
+			case HORIZONTAL: 
+				return getY(mapLoc) >= (int)(Math.floor((double)MyRobot.boardSize / 2.0));
+			case VERTICAL: 
+				return getX(mapLoc) >= (int)(Math.floor((double)MyRobot.boardSize / 2.0));
+			default:
+				return true;
+		}
+	}
+
 	static int distanceSquared(int mapLocA, int mapLocB) {
 		return magnitude(mapLocB - mapLocA);
 	}
