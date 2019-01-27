@@ -1519,8 +1519,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private int myCastle;
 
-		private static final boolean lesserSide = false;
-		private static final boolean greaterSide = true;
+		private static final boolean LESSER_SIDE = false;
+		private static final boolean GREATER_SIDE = true;
 		private boolean ourSide; 
 		private int pilgrimsLesserSide, pilgrimsGreaterSize;
 		DankQueue<Integer> resourcesToGivePilgrims;
@@ -1628,9 +1628,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private BuildAction tryToCreatePilgrimOnOtherSide() { 
 			if (!canAffordToBuild(SPECS.PILGRIM, false)) return null;
 			if (resourcesToGivePilgrims.isEmpty()) return null;
-			if (Vector.distanceSquared(resourcesToGivePilgrims.peek(), myLoc) > closestDisToGivePilgrim()) return null;
-			if ((ourSide == lesserSide && Vector.isOnLesserSide(resourcesToGivePilgrims.peek(), symmetryStatus)) ||
-				(ourSide == greaterSide && Vector.isOnGreaterSide(resourcesToGivePilgrims.peek(), symmetryStatus))) {
+			if (Vector.distanceSquared(resourcesToGivePilgrims.peek(), myLoc) > furthestDisToGivePilgrim()) return null;
+			if ((ourSide == LESSER_SIDE && Vector.isOnLesserSide(resourcesToGivePilgrims.peek(), symmetryStatus)) ||
+				(ourSide == GREATER_SIDE && Vector.isOnGreaterSide(resourcesToGivePilgrims.peek(), symmetryStatus))) {
 				resourcesToGivePilgrims.poll();
 				return tryToCreatePilgrimOnOtherSide();
 			}
@@ -1668,21 +1668,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private void determineOurSide() {
-			if (me.turn > 50) return;
-			for (Robot r : visibleRobots) {
-				if (isVisible(r) && r.team == me.team && r.unit == SPECS.PILGRIM) {
-					int loc = Vector.makeMapLocation(r.x, r.y);
-					if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap)) {
-						if (Vector.isOnLesserSide(loc, symmetryStatus)) pilgrimsLesserSide++;
-						if (Vector.isOnGreaterSide(loc, symmetryStatus)) pilgrimsGreaterSize++;
-					}
-				}
+			if (Vector.isOnLesserSide(myCastle, symmetryStatus)) {
+				ourSide = LESSER_SIDE;
+			} else {
+				ourSide = GREATER_SIDE;
 			}
-			if (pilgrimsLesserSide >= pilgrimsGreaterSize) ourSide = lesserSide;
-			else ourSide = greaterSide;
 		}
 
-		private int closestDisToGivePilgrim() {
+		private int furthestDisToGivePilgrim() {
 			if (me.turn <= 50) return 0;
 			if (me.turn < 100) return 9;
 			else return 25;
