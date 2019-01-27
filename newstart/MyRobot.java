@@ -324,7 +324,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private abstract class SpecificRobotController {
 
-		protected final int SPAM_CRUSADER_TURN_THRESHOLD = SPECS.MAX_ROUNDS-10;
+		protected final int LOW_KARBONITE_RESERVE_TURN_THRESHOLD = 4;
+		protected final int SPAM_CRUSADER_TURN_THRESHOLD = SPECS.MAX_ROUNDS-200;
 
 		protected int myCastleTalk;
 
@@ -380,8 +381,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected int karboniteReserve() {
-			if (me.turn < SPAM_CRUSADER_TURN_THRESHOLD) {
+			if (me.turn < LOW_KARBONITE_RESERVE_TURN_THRESHOLD) {
+				return 30;
+			}
+			if (me.turn < 100) {
 				return 60;
+			}
+			if (me.turn < 200) {
+				return 100;
+			}
+			if (me.turn < 600) {
+				return me.turn - 100;
+			}
+			if (me.turn < SPAM_CRUSADER_TURN_THRESHOLD) {
+				return 500;
 			}
 			return 0;
 		}
@@ -1091,8 +1104,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = checkToInitiateCircle();
 			}
 
-			if (myAction == null && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
-				myAction = tryToCreateTurtleUnit(SPECS.PROPHET);
+			if (myAction == null) {
+				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
+				if (shouldBuildTurtlingUnit(what)) {
+					myAction = tryToCreateTurtleUnit(what);
+				}
 			}
 
 			if (myAction == null) {
@@ -1107,7 +1123,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int fuelForCircle() {
-			return 150 * requiredUnitsForCircle();
+			return (100 + 2 * boardSize) * requiredUnitsForCircle();
 		}
 
 		private NullAction checkToInitiateCircle() {
@@ -1584,8 +1600,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
 			}
 
-			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
-				myAction = tryToCreateTurtleUnit(SPECS.PROPHET);
+			if (myAction == null) {
+				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
+				if (shouldBuildTurtlingUnit(what)) {
+					myAction = tryToCreateTurtleUnit(what);
+				}
 			}
 
 			return myAction;
