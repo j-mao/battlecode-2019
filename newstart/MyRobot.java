@@ -1989,9 +1989,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private double getCircleRadius() {
-			if (clock > numSqueezeRounds) return 1;
 			double rad = totalSqueezeRadius + finalRadius - initialSqueezeRate * clock - 0.5 * squeezeConst * clock * clock;
 			rad = Math.max(rad, finalRadius);
+			if (clcok > numSqueezeRounds) rad = finalRadius;
 
 			if (me.unit == SPECS.PREACHER || me.unit == SPECS.CRUSADER) {
 				rad -= 4.0; // Untested
