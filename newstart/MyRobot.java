@@ -317,22 +317,28 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class UnitWelfareChecker {
 
 		private TreeMap<Integer, Integer> assignments;
+		private int[][] whoIsAssigned;
+		private int[] unitType;
+
 		private int previousAssignment;
 		private LinkedList<Integer> relieved;
 		private int[] incompleteData;
-		private int[] unitType;
+
 		private int numPilgrims;
 		private int armedUnits;
 
 		UnitWelfareChecker() {
 			assignments = new TreeMap<>();
+			whoIsAssigned = new int[boardSize][boardSize];
+			unitType = new int[SPECS.MAX_ID+1];
+			Arrays.fill(unitType, NO_UNIT);
+
 			previousAssignment = Vector.INVALID;
 			relieved = new LinkedList<>();
 			incompleteData = new int[SPECS.MAX_ID+1];
-			unitType = new int[SPECS.MAX_ID+1];
-
 			Arrays.fill(incompleteData, -1);
-			Arrays.fill(unitType, NO_UNIT);
+
+			numPilgrims = 0;
 			armedUnits = 0;
 
 			for (Robot r: visibleRobots) {
@@ -350,6 +356,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		boolean checkIsArmed(int id) {
 			return isArmed(unitType[id]);
+		}
+
+		boolean locationIsAssigned(int location) {
+			return Vector.get(location, whoIsAssigned) != 0;
 		}
 
 		void recordNewAssignment(int location) {
@@ -370,10 +380,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				incompleteData[id] = cor;
 				return Vector.INVALID;
 			}
+
 			int loc = Vector.makeMapLocation(incompleteData[id], cor);
 			assignments.put(id, loc);
+			Vector.set(loc, whoIsAssigned, id);
 			unitType[id] = unit;
 			incompleteData[id] = -1;
+
 			if (isArmed(unit)) {
 				armedUnits++;
 			} else if (unit == SPECS.PILGRIM) {
@@ -402,6 +415,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					if (isVisible(r) && r.team == me.team && !assignments.containsKey(r.id)) {
 						if (Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 18) {
 							assignments.put(r.id, previousAssignment);
+							Vector.set(previousAssignment, whoIsAssigned, r.id);
 						} else {
 							assignments.put(r.id, Vector.INVALID);
 						}
@@ -421,6 +435,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (getRobot(assignedUnit) == null) {
 					int whatLoc = assignments.get(assignedUnit);
 					assignments.remove(assignedUnit);
+					Vector.set(whatLoc, whoIsAssigned, 0);
 					if (isArmed(unitType[assignedUnit])) {
 						armedUnits--;
 					} else if (unitType[assignedUnit] == SPECS.PILGRIM) {
@@ -456,6 +471,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						 * will disavow any knowledge of your actions.
 						 * This tape will self-destruct in ten seconds. Good luck.
 						 */
+						Vector.set(assignments.get(assignedUnit), whoIsAssigned, 0);
 						assignments.put(assignedUnit, Vector.INVALID);
 						unitType[assignedUnit] = NO_UNIT;
 					}
@@ -1425,7 +1441,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private BuildAction tryToCreateTurtleUnit(int unit, int structureLoc) {
-			int turtleLoc = pollBestTurtleLocation(structureLoc);
+			int turtleLoc = Vector.INVALID;
+			do {
+				turtleLoc = pollBestTurtleLocation(structureLoc);
+			} while (turtleLoc != Vector.INVALID && myUnitWelfareChecker.locationIsAssigned(turtleLoc));
 			if (turtleLoc != Vector.INVALID) {
 				int buildDir = selectDirectionTowardsLocation(turtleLoc);
 				if (buildDir != Vector.INVALID) {
