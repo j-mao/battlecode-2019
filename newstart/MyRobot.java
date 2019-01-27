@@ -1104,8 +1104,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = checkToInitiateCircle();
 			}
 
-			if (myAction == null && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
-				myAction = tryToCreateTurtleUnit(SPECS.PROPHET);
+			if (myAction == null) {
+				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
+				if (shouldBuildTurtlingUnit(what)) {
+					myAction = tryToCreateTurtleUnit(what);
+				}
 			}
 
 			if (myAction == null) {
@@ -1597,8 +1600,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
 			}
 
-			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
-				myAction = tryToCreateTurtleUnit(SPECS.PROPHET);
+			if (myAction == null) {
+				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
+				if (shouldBuildTurtlingUnit(what)) {
+					myAction = tryToCreateTurtleUnit(what);
+				}
 			}
 
 			return myAction;
