@@ -564,7 +564,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			// You get ridiculous-looking graphs that seem to make sense
 			// https://www.desmos.com/calculator/3niwqey33h
 
-			final double w1 = 0.125, w2 = 1, w3 = 0.25, w4 = 0.01, base = 1.5;
+			final double w1 = 2.5, w2 = 20, w3 = 5, w4 = 0.2, base = 1.5;
 			double result = 0;
 			for (Integer target: targetLocs) {
 				result += w1 * Math.sqrt(Vector.distanceSquared(location, reference));
@@ -1031,14 +1031,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (Robot r: visibleRobots) {
 				if (r.team == me.team && myUnitWelfareChecker.checkIsArmed(r.id)) {
 					int assignment = myUnitWelfareChecker.getAssignment(r.id);
-					if (assignment == Vector.INVALID) {
+					if (assignment == Vector.INVALID || !checkIfMine(assignment)) {
 						continue;
 					}
-					dists.add((int) Vector.get(assignment, penaltyForTurtlingRobot));
+					dists.add((int) Math.min(0x0fff, Vector.get(assignment, penaltyForTurtlingRobot)));
 				}
 			}
 			Collections.sort(dists, new Vector.SortIncreasingInteger());
-			return dists.get(dists.size() - requiredUnitsForCircle());
+			int take = (int) Math.max(1, requiredUnitsForCircle() * dists.size() * 1.0 / myUnitWelfareChecker.numFriendlyArmedUnits());
+			return dists.get(dists.size() - take);
 		}
 
 		private void circleExecutePurge(int shedRadius) {
@@ -1063,8 +1064,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
 						}
 					} else if ((what & 0xf000) == (Communicator.SHED_RADIUS & 0xf000) && me.turn >= lastCircleTurn+CIRCLE_COOLDOWN && circleInitiated) {
-						circleExecutePurge(what & 0x0fff);
-						return circleSendShedRadius(what & 0x0fff);
+						int myRad = calculateShedRadius();
+						circleExecutePurge(myRad);
+						return circleSendShedRadius(myRad);
 					}
 				}
 			}
@@ -1530,30 +1532,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			Action myAction = null;
 
 			if (myAction == null) {
-				myAction = tryToCompleteCircleBroadcast();
-			}
-
-			if (myAction == null) {
 				myAction = buildInResponseToNearbyEnemies();
 			}
 
 			return myAction;
-		}
-
-		private NullAction tryToCompleteCircleBroadcast() {
-
-			for (Robot r: visibleRobots) {
-				if (communications.isRadioing(r)) {
-					int what = communications.readRadio(r);
-					if ((what & 0xf000) == (Communicator.ATTACK & 0xf000) && me.turn >= lastCircleTurn+CIRCLE_COOLDOWN && !circleInitiated) {
-						return circleInitiate(Vector.makeMapLocationFromCompressed(what & 0x0fff));
-					} else if ((what & 0xf000) == (Communicator.SHED_RADIUS & 0xf000) && me.turn >= lastCircleTurn+CIRCLE_COOLDOWN && circleInitiated) {
-						return circleSendShedRadius(what & 0x0fff);
-					}
-				}
-			}
-			// No circle broadcast to propagate
-			return null;
 		}
 	}
 
