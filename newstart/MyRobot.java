@@ -1602,8 +1602,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				resourcesToGivePilgrims.poll();
 				myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
 				sendAssignedLoc(resourceLoc, ResourceClusterSolver.assignedCluster(resourceLoc));
-				return myAction;
 			}
+			return myAction;
 		}
 
 		private void determineOurSide() {
