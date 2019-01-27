@@ -1918,7 +1918,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			initialSqueezeRate = boardSize / 64.;
 			finalSqueezeRate = 0.05;
 
-			finalRadius = 5.0;
+			finalRadius = 4.0;
 			totalSqueezeRadius = (int) (1.42 * boardSize) - finalRadius;
 			squeezeConst = (finalSqueezeRate * finalSqueezeRate - initialSqueezeRate * initialSqueezeRate) / (2 * totalSqueezeRadius);
 			numSqueezeRounds = (int) Math.round(2 * totalSqueezeRadius / (initialSqueezeRate + finalSqueezeRate));
@@ -2023,10 +2023,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (Vector.magnitude(dir) > SPECS.UNITS[me.unit].VISION_RADIUS) continue;
 
 				int loc = Vector.add(myLoc, dir);
-				if (!isOccupiable(loc)) continue;
+				if (loc != myLoc && !isOccupiable(loc)) continue;
 
 				double locDist = sminDistance(loc);
-				if (locDist < minSminDist && locDist > rad) minSminDist = locDist;
+				if (locDist < minSminDist && locDist >= rad) minSminDist = locDist;
 			}
 		}
 
