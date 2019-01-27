@@ -101,11 +101,11 @@ class Vector {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
 
-	static void set(int mapLoc, int[][] arr, int value) {
+	static void set(int mapLoc, double[][] arr, double value) {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
 
-	static void set(int mapLoc, double[][] arr, double value) {
+	static void set(int mapLoc, int[][] arr, int value) {
 		arr[getY(mapLoc)][getX(mapLoc)] = value;
 	}
 
@@ -117,11 +117,11 @@ class Vector {
 		return arr[getY(mapLoc)][getX(mapLoc)];
 	}
 
-	static int get(int mapLoc, int[][] arr) {
+	static double get(int mapLoc, double[][] arr) {
 		return arr[getY(mapLoc)][getX(mapLoc)];
 	}
 
-	static double get(int mapLoc, double[][] arr) {
+	static int get(int mapLoc, int[][] arr) {
 		return arr[getY(mapLoc)][getX(mapLoc)];
 	}
 
