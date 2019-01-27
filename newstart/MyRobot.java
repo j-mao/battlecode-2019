@@ -612,8 +612,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected TreeMap<Integer, Integer> structures;
 		protected boolean[] ownStructure;
 
+		protected BoardSymmetryType symmetryStatus;
+
 		StructureController() {
 			super();
+
+			symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
 
 			CIRCLE_BUILD_REDUCTION_BASE = 1.25;
 			CIRCLE_BUILD_REDUCTION_MEDIAN = boardSize / 2;
@@ -902,7 +906,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private TreeMap<Integer, Integer> castles;
 		private boolean oppositeCastleIsDestroyed;
 
-		private BoardSymmetryType symmetryStatus;
 		private UnitWelfareChecker myUnitWelfareChecker;
 
 		CastleController() {
@@ -937,7 +940,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 			fuelLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 
-			symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
 			myUnitWelfareChecker = new UnitWelfareChecker();
 
 			int mod0AdjResources = 0, mod1AdjResources = 0;
@@ -1539,8 +1541,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class ChurchController extends StructureController {
 
+		private static final boolean lesserSide = false;
+		private static final boolean greaterSide = true;
+		private boolean ourSide; 
+		private int pilgrimsLesserSide, pilgrimsGreaterSize;
+		DankQueue<Integer> resourcesToGivePilgrims;
+
 		ChurchController() {
 			super();
+
+			// Add nearby resources to the queue resourcesToGivePilgrims in sorted order
+			LinkedList<Integer> resourceLocs = new LinkedList<>();
+			for (int dx = -8; dx <= 8; dx++) for (int dy = -8; dy <= 8; dy++) {
+				int newLoc = Vector.add(myLoc, Vector.makeDirection(dx, dy));
+				if (newLoc != Vector.INVALID) {
+					if (Vector.get(newLoc, karboniteMap) || Vector.get(newLoc, fuelMap)) {
+						resourceLocs.add(newLoc);
+					} 
+				}
+			} 
+			resourceLocs.sort(new Vector.SortByDistance(myLoc));
+			Iterator<Integer> iterator = resourceLocs.iterator();
+			resourcesToGivePilgrims = new DankQueue(resourceLocs.size());
+			while (iterator.hasNext()) {
+				resourcesToGivePilgrims.add(iterator.next());
+			}
 		}
 
 		@Override
@@ -1554,7 +1579,52 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = buildInResponseToNearbyEnemies();
 			}
 
+			if (myAction == null) {
+				myAction = tryToCreatePilgrimOnOtherSide();
+			}
+
 			return myAction;
+		}
+
+		private BuildAction tryToCreatePilgrimOnOtherSide() { 
+			if (!canAffordToBuild(SPECS.PILGRIM, false)) return null;
+			if (resourcesToGivePilgrims.isEmpty()) return null;
+			if (Vector.distanceSquared(resourcesToGivePilgrims.peek(), myLoc) > closestDisToGivePilgrim()) return null;
+			if ((ourSide == lesserSide && Vector.isOnLesserSide(resourcesToGivePilgrims.peek(), symmetryStatus)) ||
+				(ourSide == greaterSide && Vector.isOnGreaterSide(resourcesToGivePilgrims.peek(), symmetryStatus))) {
+				resourcesToGivePilgrims.poll();
+				return tryToCreatePilgrimOnOtherSide();
+			}
+			BuildAction myAction = null;
+			int resourceLoc = resourcesToGivePilgrims.peek();
+			int dir = selectDirectionTowardsLocation(resourceLoc);
+			if (dir != Vector.INVALID) {
+				resourcesToGivePilgrims.poll();
+				myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
+				sendAssignedLoc(resourceLoc, ResourceClusterSolver.assignedCluster(resourceLoc));
+				return myAction;
+			}
+		}
+
+		private void determineOurSide() {
+			if (me.turn > 50) return;
+			for (Robot r : visibleRobots) {
+				if (isVisible(r) && r.team == me.team && r.unit == SPECS.PILGRIM) {
+					int loc = Vector.makeMapLocation(r.x, r.y);
+					if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap)) {
+						if (Vector.isOnLesserSide(loc, symmetryStatus)) pilgrimsLesserSide++;
+						if (Vector.isOnGreaterSide(loc, symmetryStatus)) pilgrimsGreaterSize++;
+					}
+				}
+			}
+			if (pilgrimsLesserSide <= pilgrimsGreaterSize) ourSide = lesserSide;
+			else ourSide = greaterSide;
+		}
+
+		private int closestDisToGivePilgrim() {
+			if (me.turn <= 50) return 0;
+			if (me.turn < 100) return 9;
+			else return 25;
 		}
 	}
 
