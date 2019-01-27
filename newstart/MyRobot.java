@@ -1894,7 +1894,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		 */
 		private final double initialSqueezeRate;
 		private final double finalSqueezeRate;
-		private final double initialRadius;
+		private final double totalSqueezeRadius;
+		private final double finalRadius;
 		private final double squeezeConst;
 		private final int numSqueezeRounds;
 
@@ -1917,9 +1918,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			initialSqueezeRate = boardSize / 64.;
 			finalSqueezeRate = 0.05;
 
-			initialRadius = (int) (1.42 * boardSize);
-			squeezeConst = (finalSqueezeRate * finalSqueezeRate - initialSqueezeRate * initialSqueezeRate) / (2 * initialRadius);
-			numSqueezeRounds = (int) Math.round(2 * initialRadius / (initialSqueezeRate + finalSqueezeRate));
+			finalRadius = 5.0;
+			totalSqueezeRadius = (int) (1.42 * boardSize) - finalRadius;
+			squeezeConst = (finalSqueezeRate * finalSqueezeRate - initialSqueezeRate * initialSqueezeRate) / (2 * totalSqueezeRadius);
+			numSqueezeRounds = (int) Math.round(2 * totalSqueezeRadius / (initialSqueezeRate + finalSqueezeRate));
 
 			minSminDist = 0;
 		}
@@ -1988,11 +1990,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private double getCircleRadius() {
 			if (clock > numSqueezeRounds) return 1;
-			double rad = initialRadius - initialSqueezeRate * clock - 0.5 * squeezeConst * clock * clock;
+			double rad = totalSqueezeRadius + finalRadius - initialSqueezeRate * clock - 0.5 * squeezeConst * clock * clock;
+			rad = Math.max(rad, finalRadius);
+
 			if (me.unit == SPECS.PREACHER || me.unit == SPECS.CRUSADER) {
 				rad -= 4.0; // Untested
 			}
-			return Math.max(rad, 1);
+			
+			return rad;
 		}
 
 		private double sminDistance(int queryLoc) {
