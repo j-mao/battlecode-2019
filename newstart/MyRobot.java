@@ -384,6 +384,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (me.turn < LOW_KARBONITE_RESERVE_TURN_THRESHOLD) {
 				return 30;
 			}
+			if (me.turn < 100) {
+				return 60;
+			}
 			if (me.turn < 200) {
 				return 100;
 			}
