@@ -30,7 +30,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	// Miscellaneous constants
 	private static final int NO_UNIT = -1;
-	private static final int ARMED_UNIT = 420;
+	private static final int ARMED_UNIT = 6;
 
 	// Dangerous squares
 	private int[][] mayBecomeAttacked;
@@ -41,6 +41,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private Communicator communications;
 	private SimpleRandom rng;
 	private SpecificRobotController mySpecificRobotController;
+	private BoardSymmetryType symmetryStatus;
 
 	/** The entry point for every turn */
 	public Action turn() {
@@ -70,6 +71,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		myBfsSolver = new BfsSolver();
 		communications = new EncryptedCommunicator();
 		rng = new SimpleRandom();
+		symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
 
 		mayBecomeAttacked = new int[boardSize][boardSize];
 		isAttacked = new int[boardSize][boardSize];
@@ -165,7 +167,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
 		static final int PILGRIM = 0x40;
-		static final int ARMED = 0x80;
+		static final int PROPHET = 0x80;
+		static final int ARMED = 0xc0;
 
 		/** No message was received */
 		static final int NO_MESSAGE = -1;
@@ -319,18 +322,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private TreeMap<Integer, Integer> assignments;
 		private int[][] whoIsAssigned;
 		private int[] unitType;
+		private int[] numUnitsOfType;
 
 		private int previousAssignment;
 		private LinkedList<Integer> relieved;
 		private int[] incompleteData;
 
-		private int numPilgrims;
-		private int armedUnits;
-
 		UnitWelfareChecker() {
 			assignments = new TreeMap<>();
 			whoIsAssigned = new int[boardSize][boardSize];
 			unitType = new int[SPECS.MAX_ID+1];
+			numUnitsOfType = new int[7];
 			Arrays.fill(unitType, NO_UNIT);
 
 			previousAssignment = Vector.INVALID;
@@ -338,24 +340,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			incompleteData = new int[SPECS.MAX_ID+1];
 			Arrays.fill(incompleteData, -1);
 
-			numPilgrims = 0;
-			armedUnits = 0;
-
 			for (Robot r: visibleRobots) {
 				if (isVisible(r) && r.team == me.team) {
 					assignments.put(r.id, Vector.INVALID);
 					unitType[r.id] = r.unit;
-					if (isArmed(r.unit)) {
-						armedUnits++;
-					} else if (r.unit == SPECS.PILGRIM) {
-						numPilgrims++;
-					}
+					numUnitsOfType[r.unit]++;
 				}
 			}
-		}
-
-		boolean checkIsArmed(int id) {
-			return isArmed(unitType[id]);
 		}
 
 		boolean locationIsAssigned(int location) {
@@ -385,13 +376,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			assignments.put(id, loc);
 			Vector.set(loc, whoIsAssigned, id);
 			unitType[id] = unit;
+			numUnitsOfType[unit]++;
 			incompleteData[id] = -1;
 
-			if (isArmed(unit)) {
-				armedUnits++;
-			} else if (unit == SPECS.PILGRIM) {
-				numPilgrims++;
-			}
 			return loc;
 		}
 
@@ -420,11 +407,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 							assignments.put(r.id, Vector.INVALID);
 						}
 						unitType[r.id] = r.unit;
-						if (isArmed(r.unit)) {
-							armedUnits++;
-						} else if (r.unit == SPECS.PILGRIM) {
-							numPilgrims++;
-						}
+						numUnitsOfType[r.unit]++;
 					}
 				}
 				previousAssignment = Vector.INVALID;
@@ -436,11 +419,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					int whatLoc = assignments.get(assignedUnit);
 					assignments.remove(assignedUnit);
 					Vector.set(whatLoc, whoIsAssigned, 0);
-					if (isArmed(unitType[assignedUnit])) {
-						armedUnits--;
-					} else if (unitType[assignedUnit] == SPECS.PILGRIM) {
-						numPilgrims--;
-					}
+					numUnitsOfType[unitType[assignedUnit]]--;
 					unitType[assignedUnit] = NO_UNIT;
 					if (whatLoc != Vector.INVALID) {
 						relieved.add(whatLoc);
@@ -461,7 +440,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (isArmed(unitType[assignedUnit]) && unitType[assignedUnit] != SPECS.CASTLE) {
 					int assignment = assignments.get(assignedUnit);
 					int thisDist = (int) Vector.get(assignment, penalties);
-					if (thisDist >= shedRadius) {
+					if (thisDist >= shedRadius || unitType[assignedUnit] != SPECS.PROPHET) {
 						if (assignment != Vector.INVALID) {
 							relieved.add(assignment);
 						}
@@ -473,20 +452,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						 */
 						Vector.set(assignments.get(assignedUnit), whoIsAssigned, 0);
 						assignments.put(assignedUnit, Vector.INVALID);
+						numUnitsOfType[unitType[assignedUnit]]--;
 						unitType[assignedUnit] = NO_UNIT;
 					}
 				}
 			}
-			armedUnits = 0;
 			return relieved;
 		}
 
-		int numFriendlyArmedUnits() {
-			return armedUnits;
+		int numFriendlyUnits(int unit) {
+			return numUnitsOfType[unit];
 		}
 
-		int numFriendlyPilgrims() {
-			return numPilgrims;
+		int getUnitType(int id) {
+			return unitType[id];
 		}
 	}
 
@@ -495,6 +474,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private abstract class SpecificRobotController {
 
 		protected final int SPAM_CRUSADER_TURN_THRESHOLD = SPECS.MAX_ROUNDS-10;
+		protected static final int IDLING_OFFSET_CONSTANT = 4;
 
 		protected int myCastleTalk;
 		protected int myClusterId;
@@ -575,7 +555,23 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return result;
 		}
 
-		protected double calculateTurtlePenalty(int location, int reference, LinkedList<Integer> targetLocs) {
+		protected double calculateTurtlePenalty(int location, int reference, int unit, LinkedList<Integer> targetLocs) {
+			if (unit != SPECS.PROPHET) {
+				if (symmetryStatus == BoardSymmetryType.HORIZONTAL) {
+					if (Vector.getY(reference) < boardSize/2) {
+						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)+IDLING_OFFSET_CONSTANT);
+					} else {
+						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)-IDLING_OFFSET_CONSTANT);
+					}
+				} else if (symmetryStatus == BoardSymmetryType.VERTICAL) {
+					if (Vector.getX(reference) < boardSize/2) {
+						location = Vector.makeMapLocation(Vector.getX(location)+IDLING_OFFSET_CONSTANT, Vector.getY(location));
+					} else {
+						location = Vector.makeMapLocation(Vector.getX(location)-IDLING_OFFSET_CONSTANT, Vector.getY(location));
+					}
+				}
+			}
+
 			// This is what happens when you dump math onto a sheet of paper
 			// You get ridiculous-looking graphs that seem to make sense
 			// https://www.desmos.com/calculator/3niwqey33h
@@ -902,7 +898,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private TreeMap<Integer, Integer> castles;
 		private boolean oppositeCastleIsDestroyed;
 
-		private BoardSymmetryType symmetryStatus;
 		private UnitWelfareChecker myUnitWelfareChecker;
 
 		CastleController() {
@@ -937,7 +932,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 			fuelLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 
-			symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
 			myUnitWelfareChecker = new UnitWelfareChecker();
 
 			int mod0AdjResources = 0, mod1AdjResources = 0;
@@ -990,12 +984,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToAttack();
 			}
 
-			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD && canAffordToBuild(SPECS.CRUSADER, false)) {
+			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD) {
 				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER, getNextTurtleStructure());
 			}
 
 			if (myAction == null) {
-				// This checks if it's affordable.
 				myAction = tryToCreatePilgrim();
 			}
 
@@ -1003,7 +996,28 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = checkToInitiateCircle();
 			}
 
-			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
+			if (myAction == null && shouldBuildTurtlingUnit(SPECS.PROPHET) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.PROPHET) < requiredUnitsForCircle(SPECS.PROPHET)) {
+
+				myAction = tryToCreateTurtleUnit(SPECS.PROPHET, getNextTurtleStructure());
+			}
+
+			if (myAction == null && shouldBuildTurtlingUnit(SPECS.CRUSADER) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.PROPHET) >= requiredUnitsForCircle(SPECS.PROPHET) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.CRUSADER) < requiredUnitsForCircle(SPECS.CRUSADER)) {
+
+				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER, getNextTurtleStructure());
+			}
+
+			if (myAction == null && shouldBuildTurtlingUnit(SPECS.PREACHER) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.PROPHET) >= requiredUnitsForCircle(SPECS.PROPHET) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.CRUSADER) >= requiredUnitsForCircle(SPECS.CRUSADER) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.PREACHER) < requiredUnitsForCircle(SPECS.PREACHER)) {
+
+				myAction = tryToCreateTurtleUnit(SPECS.PREACHER, getNextTurtleStructure());
+			}
+
+			if (myAction == null && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
 				myAction = tryToCreateTurtleUnit(SPECS.PROPHET, getNextTurtleStructure());
 			}
 
@@ -1026,17 +1040,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			myUnitWelfareChecker.recordNewAssignment(location);
 		}
 
-		private int requiredUnitsForCircle() {
-			return 40 + boardSize;
+		private int requiredUnitsForCircle(int unit) {
+			if (unit == SPECS.CRUSADER) {
+				return (int) (8 + 0.2 * boardSize);
+			} else if (unit == SPECS.PROPHET) {
+				return (int) (24 + 0.6 * boardSize);
+			} else if (unit == SPECS.PREACHER) {
+				return (int) (8 + 0.2 * boardSize);
+			} else if (unit == -1) {
+				return 40 + boardSize;
+			}
 		}
 
 		private int fuelForCircle() {
-			return 150 * requiredUnitsForCircle();
+			return 150 * requiredUnitsForCircle(-1);
 		}
 
 		private NullAction checkToInitiateCircle() {
 
-			if (fuel >= fuelForCircle() && myUnitWelfareChecker.numFriendlyArmedUnits() >= requiredUnitsForCircle()) {
+			if (fuel >= fuelForCircle() &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.CRUSADER) >= requiredUnitsForCircle(SPECS.CRUSADER) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.PROPHET) >= requiredUnitsForCircle(SPECS.PROPHET) &&
+				myUnitWelfareChecker.numFriendlyUnits(SPECS.PREACHER) >= requiredUnitsForCircle(SPECS.PREACHER)) {
+
 				return circleInitiate(Vector.opposite(myLoc, symmetryStatus));
 			}
 			return null;
@@ -1045,7 +1071,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private int calculateShedRadius() {
 			LinkedList<Integer> dists = new LinkedList<>();
 			for (Robot r: visibleRobots) {
-				if (r.team == me.team && myUnitWelfareChecker.checkIsArmed(r.id)) {
+				if (r.team == me.team && myUnitWelfareChecker.getUnitType(r.id) == SPECS.PROPHET) {
 					int assignment = myUnitWelfareChecker.getAssignment(r.id);
 					if (assignment == Vector.INVALID || !checkIfMine(assignment)) {
 						continue;
@@ -1054,7 +1080,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			Collections.sort(dists, new Vector.SortIncreasingInteger());
-			int take = (int) Math.max(1, requiredUnitsForCircle() * dists.size() * 1.0 / myUnitWelfareChecker.numFriendlyArmedUnits());
+			int take = (int) Math.max(1, requiredUnitsForCircle(SPECS.PROPHET) * dists.size() * 1.0 / myUnitWelfareChecker.numFriendlyUnits(SPECS.PROPHET));
 			return dists.get(dists.size() - take);
 		}
 
@@ -1184,6 +1210,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						case Communicator.PILGRIM:
 							unit = SPECS.PILGRIM;
 							break;
+						case Communicator.PROPHET:
+							unit = SPECS.PROPHET;
+							break;
 						case Communicator.ARMED:
 							unit = ARMED_UNIT;
 							break;
@@ -1223,6 +1252,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private BuildAction tryToCreatePilgrim() {
+			if (!canAffordToBuild(SPECS.PILGRIM, false)) return null;
 
 			BuildAction myAction = null;
 
@@ -1242,7 +1272,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private BuildAction tryToCreatePilgrimForResource(LinkedList<Integer> locations, LinkedList<Boolean> pilgrimAt, LinkedList<Boolean> own) {
-			if (!canAffordToBuild(SPECS.PILGRIM, false)) return null;
 
 			BuildAction myAction = null;
 
@@ -1441,9 +1470,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private BuildAction tryToCreateTurtleUnit(int unit, int structureLoc) {
+			if (!canAffordToBuild(unit, false)) return null;
+
 			int turtleLoc = Vector.INVALID;
 			do {
-				turtleLoc = pollBestTurtleLocation(structureLoc);
+				turtleLoc = pollBestTurtleLocation(structureLoc, unit);
 			} while (turtleLoc != Vector.INVALID && myUnitWelfareChecker.locationIsAssigned(turtleLoc));
 			if (turtleLoc != Vector.INVALID) {
 				int buildDir = selectDirectionTowardsLocation(turtleLoc);
@@ -1469,7 +1500,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return (Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == turtleLocationMod;
 		}
 
-		private int pollBestTurtleLocation(int reference) {
+		private int pollBestTurtleLocation(int reference, int unit) {
 			if (availableTurtles.isEmpty()) {
 				return Vector.INVALID;
 			}
@@ -1478,9 +1509,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			for (Integer castle: castles.keySet()) {
 				enemyCastles.add(Vector.opposite(castles.get(castle), symmetryStatus));
 			}
-			double bestPenalty = calculateTurtlePenalty(availableTurtles.get(0), reference, enemyCastles);
+			double bestPenalty = calculateTurtlePenalty(availableTurtles.get(0), reference, unit, enemyCastles);
 			for (int i = 1; i < availableTurtles.size(); i++) {
-				double alt = calculateTurtlePenalty(availableTurtles.get(i), reference, enemyCastles);
+				double alt = calculateTurtlePenalty(availableTurtles.get(i), reference, unit, enemyCastles);
 				if (alt < bestPenalty) {
 					bestIdx = i;
 					bestPenalty = alt;
@@ -1494,7 +1525,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private boolean shouldBuildTurtlingUnit(int unit) {
 			// Base probability of building a unit
-			double prob = 0.1 + (frequency(pilgrimAtKarbonite, true)+frequency(pilgrimAtFuel, true)) * 1.0 / myUnitWelfareChecker.numFriendlyPilgrims();
+			double prob = 0.1 + (frequency(pilgrimAtKarbonite, true)+frequency(pilgrimAtFuel, true)) * 1.0 / myUnitWelfareChecker.numFriendlyUnits(SPECS.PILGRIM);
 			// Increase with karbonite stores, but not fuel stores since those can explode
 			int amCanBuild = (karbonite-karboniteReserve())/SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			amCanBuild = Math.min(amCanBuild, fuel/SPECS.UNITS[unit].CONSTRUCTION_FUEL);
@@ -1863,7 +1894,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (!activated) {
 				if (circleShedPenalty != -1) {
-					if (calculateTurtlePenalty(assignedLoc, myCentroidLoc, circleLocs) >= circleShedPenalty) {
+					if (calculateTurtlePenalty(assignedLoc, myCentroidLoc, me.unit, circleLocs) >= circleShedPenalty ||
+						me.unit != SPECS.PROPHET) {
+
 						mySpecificRobotController = new CircleRobotController(circleLocs, myHome);
 						return mySpecificRobotController.runSpecificTurn();
 					}
@@ -1878,10 +1911,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private void sendMyAssignedLoc() {
-			if (me.turn == 1) {
-				myCastleTalk = Vector.getX(assignedLoc) | Communicator.ARMED;
-			} else if (me.turn == 2) {
-				myCastleTalk = Vector.getY(assignedLoc) | Communicator.ARMED;
+			if (me.unit == SPECS.PROPHET) {
+				if (me.turn == 1) {
+					myCastleTalk = Vector.getX(assignedLoc) | Communicator.PROPHET;
+				} else if (me.turn == 2) {
+					myCastleTalk = Vector.getY(assignedLoc) | Communicator.PROPHET;
+				}
+			} else {
+				if (me.turn == 1) {
+					myCastleTalk = Vector.getX(assignedLoc) | Communicator.ARMED;
+				} else if (me.turn == 2) {
+					myCastleTalk = Vector.getY(assignedLoc) | Communicator.ARMED;
+				}
 			}
 		}
 	}
