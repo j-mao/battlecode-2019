@@ -41,6 +41,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private Communicator communications;
 	private SimpleRandom rng;
 	private SpecificRobotController mySpecificRobotController;
+	private BoardSymmetryType symmetryStatus;
 
 	/** The entry point for every turn */
 	public Action turn() {
@@ -70,6 +71,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		myBfsSolver = new BfsSolver();
 		communications = new EncryptedCommunicator();
 		rng = new SimpleRandom();
+		symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
 
 		mayBecomeAttacked = new int[boardSize][boardSize];
 		isAttacked = new int[boardSize][boardSize];
@@ -148,6 +150,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		static final int ATTACK = 0x3000;
 		static final int CIRCLE_SUCCESS = 0x4000;
 		static final int SHED_RADIUS = 0x5000;
+		static final int CASTLELOC = 0x6000;
 
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
@@ -184,6 +187,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (isVisible(r) && isFriendlyStructure(r) && isRadioing(r) && r.signal_radius == 2) {
 					int msg = readRadio(r);
 					if ((msg & 0xf000) == (ASSIGN & 0xf000)) {
+						return Vector.makeMapLocationFromCompressed(msg & 0x0fff);
+					}
+				}
+			}
+			return Vector.INVALID;
+		}
+
+		final int readCastleLoc() {
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.unit == SPECS.PILGRIM && isRadioing(r) && r.signal_radius == 2) {
+					int msg = readRadio(r);
+					if ((msg & 0xf000) == (CASTLELOC & 0xf000)) {
 						return Vector.makeMapLocationFromCompressed(msg & 0x0fff);
 					}
 				}
@@ -383,6 +398,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private class UnitWelfareChecker {
 
 			private TreeMap<Integer, Integer> assignments;
+			private int[][] whoIsAssigned;
 			private int previousAssignment;
 			private LinkedList<Integer> relieved;
 			private int[] incompleteData;
@@ -393,6 +409,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			UnitWelfareChecker() {
 				assignments = new TreeMap<>();
+				whoIsAssigned = new int[boardSize][boardSize];
 				pilgrimLastGive = new TreeMap<>();
 				previousAssignment = Vector.INVALID;
 				relieved = new LinkedList<>();
@@ -421,6 +438,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			boolean locationIsAssigned(int location) {
+				return Vector.get(location, whoIsAssigned) != 0;
+			}
+
 			boolean checkIsArmed(int id) {
 				return isArmed(unitType[id]);
 			}
@@ -445,6 +466,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 				int loc = Vector.makeMapLocation(incompleteData[id], cor);
 				assignments.put(id, loc);
+				Vector.set(loc, whoIsAssigned, id);
 				unitType[id] = unit;
 				incompleteData[id] = -1;
 				if (isArmed(unit)) {
@@ -474,6 +496,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (isVisible(r) && r.team == me.team && !assignments.containsKey(r.id)) {
 							if (Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 18) {
 								assignments.put(r.id, previousAssignment);
+								Vector.set(Vector.makeMapLocation(r.x, r.y), whoIsAssigned, r.id);
 							} else {
 								assignments.put(r.id, Vector.INVALID);
 							}
@@ -497,6 +520,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						} 
 						unitType[assignedUnit] = NO_UNIT;
 						if (whatLoc != Vector.INVALID) {
+							Vector.set(whatLoc, whoIsAssigned, 0);
 							relieved.add(whatLoc);
 						}
 					}
@@ -539,6 +563,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						if (thisDist >= shedRadius) {
 							if (assignment != Vector.INVALID) {
 								relieved.add(assignment);
+								Vector.set(assignment, whoIsAssigned, 0);
 							}
 							/*
 							* Your mission, should you choose to accept it, is to infiltrate the enemy turtle.
@@ -575,14 +600,15 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		protected boolean circleInitiated;
 
+		protected static final int IDLING_OFFSET_CONSTANT = 4;
+
 		protected LinkedList<Integer> availableTurtles;
 		protected UnitWelfareChecker myUnitWelfareChecker;
 		protected int broadcastUniverseRadiusSquared;
 		protected int lastCircleTurn;
 
 		protected TreeMap<Integer, Integer> structures;
-
-		protected int turtleLocationMod;
+		protected LinkedList<Integer> enemyTargets;
 
 		StructureController() {
 			super();
@@ -592,31 +618,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			circleInitiated = false;
 
-			int mod0AdjResources = 0, mod1AdjResources = 0;
-			for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) {
-				int loc = Vector.add(myLoc, Vector.makeDirection(dx, dy));
-				if (loc == Vector.INVALID || !Vector.get(loc, map) || Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap)) {
-					if ((Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == 0) {
-						mod0AdjResources++;
-					} else {
-						mod1AdjResources++;
-					}
-				}
-			}
-			if (mod0AdjResources >= mod1AdjResources) {
-				turtleLocationMod = 0;
-			} else {
-				turtleLocationMod = 1;
-			}
-			
 			availableTurtles = new LinkedList<>();
-			int maxDispl = (int) Math.ceil(Math.sqrt(SPECS.UNITS[me.unit].VISION_RADIUS));
-			for (int i = -maxDispl; i <= maxDispl; i++) for (int j = -maxDispl; j <= maxDispl; j++) {
-				int loc = Vector.makeMapLocation(Vector.getX(myLoc)+i, Vector.getY(myLoc)+j);
-				if (loc != Vector.INVALID && Vector.get(loc, map) && isGoodTurtlingLocation(loc)) {
-					availableTurtles.add(loc);
-				}
-			}
 
 			myUnitWelfareChecker = new UnitWelfareChecker();
 			broadcastUniverseRadiusSquared = getBroadcastUniverseRadiusSquared();
@@ -624,9 +626,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			structures = new TreeMap<>();
 			structures.put(me.id, myLoc);
+			enemyTargets = new LinkedList<>();
 		}
 
 		protected abstract boolean isGoodTurtlingLocation(int loc);
+
+		protected void generateTurtleLocations() {
+			for (int i = 0; i < boardSize; i++) for (int j = 0; j < boardSize; j++) {
+				int loc = Vector.makeMapLocation(i, j);
+				if (isGoodTurtlingLocation(loc)) {
+					availableTurtles.add(loc);
+				}
+			}
+		}
 
 		protected void sendStructureLocation() {
 			if (me.turn == 1) {
@@ -704,14 +716,34 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					return null;
 				}
 				myAction = buildUnit(toBuild, Vector.getX(dir), Vector.getY(dir));
-				sendAssignedLoc(pollClosestTurtleLocation(myLoc+dir));
+				sendAssignedLoc(closestEnemy);
 			}
 
 			return myAction;
 		}
 
 		protected BuildAction tryToCreateTurtleUnit(int unit) {
-			int turtleLoc = pollClosestTurtleLocation(myLoc);
+			if (!canAffordToBuild(unit, false)) {
+				return null;
+			}
+
+			LinkedList<Integer> popped = new LinkedList<>();
+			int turtleLoc = Vector.INVALID;
+			while (!availableTurtles.isEmpty() &&
+				(turtleLoc == Vector.INVALID ||
+				myUnitWelfareChecker.locationIsAssigned(turtleLoc) ||
+				!isOccupiable(turtleLoc))) {
+
+				if (turtleLoc != Vector.INVALID) {
+					popped.add(turtleLoc);
+				}
+				turtleLoc = pollBestTurtleLocation(unit);
+			}
+
+			for (Integer reinsert: popped) {
+				availableTurtles.add(reinsert);
+			}
+
 			if (turtleLoc != Vector.INVALID) {
 				int buildDir = selectDirectionTowardsLocation(turtleLoc);
 				if (buildDir != Vector.INVALID) {
@@ -719,21 +751,57 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					sendAssignedLoc(turtleLoc);
 					return myAction;
 				} else {
-					// put it back in
 					availableTurtles.add(turtleLoc);
 				}
 			}
 			return null;
 		}
 
-		protected int pollClosestTurtleLocation(int targetLoc) {
+		protected double calculateTurtlePenalty(int location, int unit) {
+			if (unit != SPECS.PROPHET) {
+				if (symmetryStatus == BoardSymmetryType.HORIZONTAL) {
+					if (Vector.getY(myLoc) < boardSize/2) {
+						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)+IDLING_OFFSET_CONSTANT);
+					} else {
+						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)-IDLING_OFFSET_CONSTANT);
+					}
+				} else if (symmetryStatus == BoardSymmetryType.VERTICAL) {
+					if (Vector.getX(myLoc) < boardSize/2) {
+						location = Vector.makeMapLocation(Vector.getX(location)+IDLING_OFFSET_CONSTANT, Vector.getY(location));
+					} else {
+						location = Vector.makeMapLocation(Vector.getX(location)-IDLING_OFFSET_CONSTANT, Vector.getY(location));
+					}
+				}
+			}
+
+			// This is what happens when you dump math onto a sheet of paper
+			// You get ridiculous-looking graphs that seem to make sense
+			// https://www.desmos.com/calculator/3niwqey33h
+
+			final double w1 = 2.5, w2 = 20, w3 = 5, w4 = 0.2, base = 1.5;
+			double result = 0;
+			for (Integer target: enemyTargets) {
+				result += w1 * Math.sqrt(Vector.distanceSquared(location, myLoc));
+				result += w2 * Math.abs(Math.sqrt(Vector.distanceSquared(location, target)) - Math.sqrt(Vector.distanceSquared(myLoc, target)));
+				result += w3 * Math.sqrt(Vector.distanceSquared(location, target));
+				result += w4 * Math.pow(base, Math.sqrt(Vector.distanceSquared(location, myLoc)) - Math.sqrt(Vector.distanceSquared(location, target)));
+			}
+
+			return result;
+		}
+
+
+		protected int pollBestTurtleLocation(int unit) {
 			if (availableTurtles.isEmpty()) {
 				return Vector.INVALID;
 			}
 			int bestIdx = 0;
+			double bestPenalty = calculateTurtlePenalty(availableTurtles.get(0), unit);
 			for (int i = 1; i < availableTurtles.size(); i++) {
-				if (Vector.distanceSquared(targetLoc, availableTurtles.get(i)) < Vector.distanceSquared(targetLoc, availableTurtles.get(bestIdx))) {
+				double alt = calculateTurtlePenalty(availableTurtles.get(i), unit);
+				if (alt < bestPenalty) {
 					bestIdx = i;
+					bestPenalty = alt;
 				}
 			}
 			int bestLoc = availableTurtles.get(bestIdx);
@@ -938,8 +1006,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private TreeMap<Integer, Integer> castles;
 		private boolean oppositeCastleIsDestroyed;
 
-		private BoardSymmetryType symmetryStatus;
-
 		CastleController() {
 			super();
 			karboniteLocs = new LinkedList<>();
@@ -990,7 +1056,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			karboniteLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 			fuelLocs.sort(new Vector.SortByDistance(Vector.opposite(myLoc, symmetryStatus)));
 
-			symmetryStatus = BoardSymmetryType.determineSymmetricOrientation(map, karboniteMap, fuelMap);
+			castles.put(me.id, myLoc);
+			enemyTargets.add(Vector.opposite(myLoc, symmetryStatus));
 		}
 
 		@Override
@@ -1002,6 +1069,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			checkResourceDepotOwnership(karboniteLocs, ownKarbonite);
 			checkResourceDepotOwnership(fuelLocs, ownFuel);
 			checkForCircleSuccess();
+
+			if (me.turn == 3) {
+				generateTurtleLocations();
+			}
 
 			Action myAction = null;
 
@@ -1017,7 +1088,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToAttack();
 			}
 
-			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD && canAffordToBuild(SPECS.CRUSADER, false)) {
+			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD) {
 				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
 			}
 
@@ -1030,7 +1101,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = checkToInitiateCircle();
 			}
 
-			if (myAction == null && canAffordToBuild(SPECS.PROPHET, false) && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
+			if (myAction == null && shouldBuildTurtlingUnit(SPECS.PROPHET)) {
 				myAction = tryToCreateTurtleUnit(SPECS.PROPHET);
 			}
 
@@ -1115,12 +1186,27 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
+		private boolean checkIfMine(int location) {
+			int myDist = Vector.distanceSquared(myLoc, location);
+			for (Integer castle: castles.keySet()) {
+				if (Vector.distanceSquared(castles.get(castle), location) < myDist) {
+					return false;
+				} else if (Vector.distanceSquared(castles.get(castle), location) == myDist && castle < me.id) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		@Override
 		protected boolean isGoodTurtlingLocation(int loc) {
-			if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap) || loc == myLoc) {
+			if (!Vector.get(loc, map) || Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap) || loc == myLoc) {
 				return false;
 			}
-			return (Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == turtleLocationMod;
+			if (!checkIfMine(loc)) {
+				return false;
+			}
+			return (Vector.getX(loc)+Vector.getY(loc)) % 2 == 0;
 		}
 
 		private AttackAction tryToAttack() {
@@ -1207,6 +1293,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						int completeLocation = myUnitWelfareChecker.recordCoordinate(r.id, what & 0x3f, unit);
 						if (r.turn == 2 && unit == SPECS.CASTLE) {
 							castles.put(r.id, completeLocation);
+							enemyTargets.add(Vector.opposite(completeLocation, symmetryStatus));
 						}
 						if (r.turn == 2 && isStructure(unit)) {
 							structures.put(r.id, completeLocation);
@@ -1218,15 +1305,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		private void checkResourceDepotOwnership(LinkedList<Integer> locations, LinkedList<Boolean> own) {
 			for (int i = 0; i < locations.size(); i++) {
-				own.set(i, true);
-				int myDist = Vector.distanceSquared(myLoc, locations.get(i));
-				for (Integer castle: castles.keySet()) {
-					if (Vector.distanceSquared(castles.get(castle), locations.get(i)) < myDist) {
-						own.set(i, false);
-					} else if (Vector.distanceSquared(castles.get(castle), locations.get(i)) == myDist && castle < me.id) {
-						own.set(i, false);
-					}
-				}
+				own.set(i, checkIfMine(locations.get(i)));
 			}
 		}
 
@@ -1482,8 +1561,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class ChurchController extends StructureController {
 
+		private int myCastle;
+
 		ChurchController() {
 			super();
+
+			myCastle = communications.readCastleLoc();
+			enemyTargets.add(Vector.opposite(myCastle, symmetryStatus));
+			generateTurtleLocations();
 		}
 
 		@Override
@@ -1531,13 +1616,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		@Override
 		protected boolean isGoodTurtlingLocation(int loc) {
-			if (Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap) || loc == myLoc) {
+			if (!Vector.get(loc, map) || Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap) || loc == myLoc) {
 				return false;
 			}
 			if (Vector.distanceSquared(myLoc, loc) > SPECS.UNITS[me.unit].VISION_RADIUS) {
 				return false;
 			}
-			return (Vector.getX(myLoc)+Vector.getY(myLoc)+Vector.getX(loc)+Vector.getY(loc)) % 2 == turtleLocationMod;
+			return (Vector.getX(loc)+Vector.getY(loc)) % 2 == 0;
 		}
 
 		private void checkTurtleWelfare() {
@@ -1609,6 +1694,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null && wantChurch && Vector.isAdjacent(myLoc, churchLoc)) {
 				if (isOccupiable(churchLoc)) {
 					myAction = buildUnit(SPECS.CHURCH, Vector.getX(churchLoc-myLoc), Vector.getY(churchLoc-myLoc));
+					communications.sendRadio(Vector.compress(myHome) | Communicator.CASTLELOC, 2);
 				}
 			}
 
