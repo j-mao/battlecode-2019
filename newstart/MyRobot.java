@@ -1546,6 +1546,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private boolean ourSide; 
 		private int pilgrimsLesserSide, pilgrimsGreaterSize;
 		DankQueue<Integer> resourcesToGivePilgrims;
+		TreeMap<Integer, Integer> myAssignedPilgrims;
+		private int justBuiltPilgrimLoc;
 
 		ChurchController() {
 			super();
@@ -1566,12 +1568,19 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			while (iterator.hasNext()) {
 				resourcesToGivePilgrims.add(iterator.next());
 			}
+
+			justBuiltPilgrimLoc = Vector.INVALID;
+
+			myAssignedPilgrims = new TreeMap<>();
 		}
 
 		@Override
 		Action runSpecificTurn() {
 
 			sendStructureLocation();
+			determineOurSide();
+			notePositionOfNewPilgrim();
+			checkForDeadAssignedPilgrims();
 
 			Action myAction = null;
 
@@ -1601,9 +1610,31 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (dir != Vector.INVALID) {
 				resourcesToGivePilgrims.poll();
 				myAction = buildUnit(SPECS.PILGRIM, Vector.getX(dir), Vector.getY(dir));
+				justBuiltPilgrimLoc = resourceLoc;
 				sendAssignedLoc(resourceLoc, ResourceClusterSolver.assignedCluster(resourceLoc));
 			}
 			return myAction;
+		}
+
+		private void notePositionOfNewPilgrim() {
+			if (justBuiltPilgrimLoc == Vector.INVALID) return;
+			for (Robot r : visibleRobots) {
+				if (isVisible(r) && r.team == me.team && r.unit == SPECS.PILGRIM && r.turn == 1 && 
+					Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 9) {
+					myAssignedPilgrims.put(r.id, justBuiltPilgrimLoc);
+				}
+			}
+			justBuiltPilgrimLoc = Vector.INVALID;
+		}
+
+		private void checkForDeadAssignedPilgrims() {
+			for (Integer assignedPilgrim: myAssignedPilgrims.keySet()) { 
+				if (getRobot(assignedPilgrim) == null) {
+					// RIP pilgrim
+					resourcesToGivePilgrims.addFront(myAssignedPilgrims.get(assignedPilgrim));
+					myAssignedPilgrims.remove(assignedPilgrim);
+				}
+			}
 		}
 
 		private void determineOurSide() {
@@ -1617,7 +1648,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 					}
 				}
 			}
-			if (pilgrimsLesserSide <= pilgrimsGreaterSize) ourSide = lesserSide;
+			if (pilgrimsLesserSide >= pilgrimsGreaterSize) ourSide = lesserSide;
 			else ourSide = greaterSide;
 		}
 
