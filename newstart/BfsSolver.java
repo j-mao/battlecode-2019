@@ -206,6 +206,21 @@ class BfsSolver {
 						nextMsk &= succeedMask[level][__notbuiltin_ctz(curMsk)];
 					}
 				}
+				// forgive me christ
+				if (level == 1) {
+					if ((curMsk & 0b0000000000001110) == 0) {
+						nextMsk &= ~0b0001;
+					}
+					if ((curMsk & 0b0000000011100000) == 0) {
+						nextMsk &= ~0b0010;
+					}
+					if ((curMsk & 0b0000111000000000) == 0) {
+						nextMsk &= ~0b0100;
+					}
+					if ((curMsk & 0b1110000000000000) == 0) {
+						nextMsk &= ~0b1000;
+					}
+				}
 				level++;
 				curMsk = nextMsk;
 			}
