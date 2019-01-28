@@ -2020,11 +2020,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 	private class CircleRobotController extends MobileRobotController {
 
 		/**
-		 * Rate decreases linearly from initialSqueezeRate
-		 * to finalSqueezeRate.
+		 * Rate decreases inverse-linearly from initSqueezeRate
+		 * to finSqueezeRate.
 		 */
-		private final double initialSqueezeRate;
-		private final double finalSqueezeRate;
+		private final double invInitSqueezeRate;
+		private final double invFinSqueezeRate;
 		private final double totalSqueezeRadius;
 		private final double finalRadius;
 		private final double squeezeConst;
@@ -2046,13 +2046,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 			clock = 0;
 
-			initialSqueezeRate = boardSize / 64.;
-			finalSqueezeRate = 0.05;
+			invInitSqueezeRate = 64. / boardSize;
+			invFinSqueezeRate = 1. / 8.;
 
 			finalRadius = 4.0;
 			totalSqueezeRadius = (int) (1.42 * boardSize) - finalRadius;
-			squeezeConst = (finalSqueezeRate * finalSqueezeRate - initialSqueezeRate * initialSqueezeRate) / (2 * totalSqueezeRadius);
-			numSqueezeRounds = (int) Math.round(2 * totalSqueezeRadius / (initialSqueezeRate + finalSqueezeRate));
+			squeezeConst = Math.log(invFinSqueezeRate / invInitSqueezeRate) / totalSqueezeRadius;
+			numSqueezeRounds = (int) Math.floor((invFinSqueezeRate - invInitSqueezeRate) / squeezeConst);
 
 			minSminDist = 0;
 		}
@@ -2137,7 +2137,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private double getCircleRadius() {
-			double rad = totalSqueezeRadius + finalRadius - initialSqueezeRate * clock - 0.5 * squeezeConst * clock * clock;
+			double rad = totalSqueezeRadius + finalRadius - Math.log(1 + squeezeConst * clock / invInitSqueezeRate) / squeezeConst;
 			rad = Math.max(rad, finalRadius);
 			if (clock > numSqueezeRounds) rad = finalRadius;
 
