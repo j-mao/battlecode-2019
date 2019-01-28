@@ -2047,7 +2047,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			clock = 0;
 
 			invInitSqueezeRate = 64. / boardSize;
-			invFinSqueezeRate = 1. / 8.;
+			invFinSqueezeRate = 8.;
 
 			finalRadius = 4.0;
 			totalSqueezeRadius = (int) (1.42 * boardSize) - finalRadius;
