@@ -1247,7 +1247,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (!checkIfMine(loc)) {
 				return false;
 			}
-			return (Vector.getX(loc)+Vector.getY(loc)) % 2 == 0;
+			return Vector.getX(loc) % 2 == 0 || Vector.getY(loc) % 2 == 0;
 		}
 
 		private AttackAction tryToAttack() {
@@ -1636,7 +1636,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (Vector.distanceSquared(myLoc, loc) > SPECS.UNITS[me.unit].VISION_RADIUS) {
 				return false;
 			}
-			return (Vector.getX(loc)+Vector.getY(loc)) % 2 == 0;
+			return Vector.getX(loc) % 2 == 0 || Vector.getY(loc) % 2 == 0;
 		}
 
 		private void checkTurtleWelfare() {
