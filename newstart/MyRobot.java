@@ -749,6 +749,20 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 		}
 
+		protected boolean turtleWillIsolateMeForever(int location) {
+			int claustrophobia = 0;
+			for (int dir: dirs) {
+				int loc = Vector.add(myLoc, dir);
+				if (!isOccupiable(loc) || myUnitWelfareChecker.locationIsAssigned(loc) ||
+					Vector.get(loc, karboniteMap) || Vector.get(loc, fuelMap) ||
+					location == loc) {
+
+					claustrophobia++;
+				}
+			}
+			return claustrophobia == 8;
+		}
+
 		protected BuildAction tryToCreateTurtleUnit(int unit) {
 			if (!canAffordToBuild(unit, false)) {
 				return null;
@@ -757,9 +771,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			LinkedList<Integer> popped = new LinkedList<>();
 			int turtleLoc = Vector.INVALID;
 			while (!availableTurtles.isEmpty() &&
-				(turtleLoc == Vector.INVALID ||
+				(!isOccupiable(turtleLoc) ||
 				myUnitWelfareChecker.locationIsAssigned(turtleLoc) ||
-				!isOccupiable(turtleLoc))) {
+				turtleWillIsolateMeForever(turtleLoc))) {
 
 				if (turtleLoc != Vector.INVALID) {
 					popped.add(turtleLoc);
