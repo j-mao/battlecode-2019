@@ -1378,7 +1378,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			BuildAction myAction = null;
 
-			if (pilgrimsBuilt % 4 == 0 || me.turn < OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
+			// Uncomment to reenable building close occasionally.
+			if (/* pilgrimsBuilt % 4 == 0 || */ me.turn < OCCUPY_FARAWAY_RESOURCE_THRESHOLD) {
 				// Every now and then, we'll just build a worker somewhere pretty close by.
 
 				int closestDist = Integer.MAX_VALUE;
@@ -1700,7 +1701,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (!churchBuilt) {
-				if (enemyUnitVisible() && canAffordToBuild(SPECS.CHURCH, true)) {
+				if ((enemyUnitVisible() || me.karbonite == SPECS.UNITS[me.unit].KARBONITE_CAPACITY) &&
+					canAffordToBuild(SPECS.CHURCH, true)) {
+					
 					wantChurch = true;
 				}
 				if (farmHalfQty == 0 && canAffordToBuild(SPECS.CHURCH, false)) {
