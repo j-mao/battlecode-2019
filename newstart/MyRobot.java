@@ -150,6 +150,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		static final int ATTACK = 0x3000;
 		static final int SHED_RADIUS = 0x4000;
 		static final int CIRCLE_SUCCESS = 0x5000;
+		static final int DISTRESS = 0x6000;
 		static final int CASTLELOC = 0x8000;
 
 		// Bitmasks for castle communications
@@ -645,6 +646,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected final double CIRCLE_BUILD_REDUCTION_BASE;
 		protected final double CIRCLE_BUILD_REDUCTION_MEDIAN;
 
+		protected static final int TIME_BETWEEN_DISTRESSES = 10;
+		protected int lastDistress;
+
 		protected boolean circleInitiated;
 		protected int lastCircleTurn;
 
@@ -689,6 +693,29 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected void sendAssignedLoc(int location) {
 			communications.sendRadio(Vector.compress(location) | Communicator.ASSIGN, 2);
 			myUnitWelfareChecker.recordNewAssignment(location);
+		}
+
+		protected boolean sendDistressIfRequired() {
+			int closestEnemy = Vector.INVALID;
+			int furthestFriendDist = 0;
+			for (Robot r: visibleRobots) {
+				if (isVisible(r)) {
+					int theirLoc = Vector.makeMapLocation(r.x, r.y);
+					if (r.team != me.team) {
+						if (closestEnemy == Vector.INVALID ||
+							Vector.distanceSquared(myLoc, theirLoc) < Vector.distanceSquared(myLoc, closestEnemy)) {
+							closestEnemy = theirLoc;
+						}
+					} else if (isArmed(r.unit)) {
+						furthestFriendDist = Math.max(furthestFriendDist, Vector.distanceSquared(myLoc, theirLoc));
+					}
+				}
+			}
+			if (closestEnemy != Vector.INVALID) {
+				communications.sendRadio(Vector.compress(closestEnemy) | Communicator.DISTRESS, furthestFriendDist);
+				return true;
+			}
+			return false;
 		}
 
 		protected BuildAction buildInResponseToNearbyEnemies() {
@@ -1017,6 +1044,27 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			return null;
 		}
+
+		protected int checkForDistress() {
+			for (Robot r: visibleRobots) {
+				if (communications.isRadioing(r) && Vector.makeMapLocation(r.x, r.y) == myHome) {
+					int msg = communications.readRadio(r);
+					if ((msg & 0xf000) == (Communicator.DISTRESS & 0xf000)) {
+						return Vector.makeMapLocationFromCompressed(msg & 0x0fff);
+					}
+				}
+			}
+			return Vector.INVALID;
+		}
+
+		protected boolean enemyUnitVisible() {
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.team != me.team) {
+					return true;
+				}
+			}
+			return false;
+		}
 	}
 
 	private class CastleController extends StructureController {
@@ -1027,7 +1075,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		 */
 		private static final int OCCUPY_FARAWAY_RESOURCE_THRESHOLD = 3;
 		private static final int INVADE_ENEMY_FARMS_TURN_THRESHOLD = 150;
-
 		private static final int MAX_CLUSTERS = 32;
 
 		private LinkedList<Integer> karboniteLocs;
@@ -1127,6 +1174,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				myAction = tryToAttack();
+				if (myAction != null && me.turn > lastDistress+TIME_BETWEEN_DISTRESSES) {
+					if (sendDistressIfRequired()) {
+						lastDistress = me.turn;
+					}
+				}
 			}
 
 			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD) {
@@ -1593,6 +1645,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			sendStructureLocation();
 			checkTurtleWelfare();
 
+			if (me.turn > lastDistress+TIME_BETWEEN_DISTRESSES) {
+				if (sendDistressIfRequired()) {
+					lastDistress = me.turn;
+				}
+			}
+
 			Action myAction = null;
 
 			if (myAction == null) {
@@ -1795,15 +1853,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return myAction;
 		}
 
-		private boolean enemyUnitVisible() {
-			for (Robot r: visibleRobots) {
-				if (isVisible(r) && r.team != me.team) {
-					return true;
-				}
-			}
-			return false;
-		}
-
 		private int karboniteLimit() {
 			if (farmHalfQty > 0) {
 				return SPECS.UNITS[me.unit].KARBONITE_CAPACITY >> 1;
@@ -1851,6 +1900,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private LinkedList<Integer> circleLocs;
 		private boolean activated;
 		private int assignedLoc;
+		private int distressLoc;
 
 		TurtlingRobotController() {
 			super();
@@ -1858,12 +1908,24 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			circleLocs = new LinkedList<>();
 			activated = false;
 			assignedLoc = communications.readAssignedLoc();
+			distressLoc = Vector.INVALID;
 		}
 
 		@Override
 		Action runSpecificTurn() {
 
 			checkForCircleAssignments();
+
+			if (distressLoc == Vector.INVALID) {
+				distressLoc = checkForDistress();
+			}
+
+			if (distressLoc != Vector.INVALID &&
+				Vector.get(distressLoc, visibleRobotMap) != MAP_INVISIBLE &&
+				!enemyUnitVisible()) {
+
+				distressLoc = Vector.INVALID;
+			}
 
 			Action myAction = null;
 			sendMyAssignedLoc();
@@ -1877,7 +1939,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				int newLoc = Vector.add(myLoc, dir);
 				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
 					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, SPECS.UNITS[me.unit].SPEED,
-						(location) -> { return location == assignedLoc; },
+						(location) -> {
+							return location == distressLoc || (distressLoc == Vector.INVALID && location == assignedLoc);
+						},
 						(location) -> { return isOccupiable(location) || location == assignedLoc; }
 					);
 					dir = myBfsSolver.nextStep();
