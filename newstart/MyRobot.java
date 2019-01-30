@@ -1100,7 +1100,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 		@Override
 		Action runSpecificTurn() {
-
 			sendStructureLocation();
 			readUnitLocations();
 			checkUnitsWelfare();
@@ -1140,7 +1139,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null) {
-				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
+				int what = (Math.random() < 0.9) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
 				if (shouldBuildTurtlingUnit(what)) {
 					myAction = tryToCreateTurtleUnit(what, myLoc);
 				}
@@ -1158,7 +1157,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		private int fuelForCircle() {
-			return (100 + 2 * boardSize) * requiredUnitsForCircle();
+			return (120 + 2 * boardSize) * requiredUnitsForCircle();
 		}
 
 		private NullAction checkToInitiateCircle() {
@@ -1604,7 +1603,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null) {
-				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
+				int what = (Math.random() < 0.9) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
 				if (shouldBuildTurtlingUnit(what)) {
 					myAction = tryToCreateTurtleUnit(what, myCastle);
 				}
@@ -1990,6 +1989,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private TreeSet<Integer> circleLocs;
 		private int clock;
 
+		private int myInitialHealth;
+		private boolean amChargingRobot;
+		private boolean chargingStatusChanged;
+
 		CircleRobotController(LinkedList<Integer> circleLocations, int newHome) {
 			super(newHome);
 
@@ -2008,6 +2011,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			numSqueezeRounds = (int) Math.floor((invFinSqueezeRate - invInitSqueezeRate) / squeezeConst);
 
 			minSminDist = 0;
+
+			myInitialHealth = me.health;
+			amChargingRobot = chargingStatusChanged = false;
 		}
 
 		@Override
@@ -2019,6 +2025,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				checkForAnyExtraCircles();
 			}
 			checkForCircleSuccess();
+			checkToBecomeChargingRobot();
 
 			calculateSminDists();
 
@@ -2028,21 +2035,39 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				myAction = tryToAttack();
 			}
 
-			if (myAction == null && !isPrettyGoodCircleLocation(myLoc)) {
-				int dir = myBfsSolver.nextStep();
-				int newLoc = Vector.add(myLoc, dir);
-				if (dir == Vector.INVALID || !isOccupiable(newLoc)) {
-					myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, 2,
-						(location) -> { return isPrettyGoodCircleLocation(location); },
-						(location) -> { return isOccupiable(location); }
-					);
-					dir = myBfsSolver.nextStep();
-					newLoc = Vector.add(myLoc, dir);
+			if (!amChargingRobot) {
+				if (myAction == null && !isPrettyGoodCircleLocation(myLoc)) {
+					int dir = myBfsSolver.nextStep();
+					int newLoc = Vector.add(myLoc, dir);
+					if (dir == Vector.INVALID || !isOccupiable(newLoc) || chargingStatusChanged) {
+						myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, 2,
+							(location) -> { return isPrettyGoodCircleLocation(location); },
+							(location) -> { return isOccupiable(location); }
+						);
+						dir = myBfsSolver.nextStep();
+						newLoc = Vector.add(myLoc, dir);
+					}
+					if (dir != Vector.INVALID && isOccupiable(newLoc)) {
+						myAction = move(Vector.getX(dir), Vector.getY(dir));
+					}
 				}
-				if (dir != Vector.INVALID && isOccupiable(newLoc)) {
-					myAction = move(Vector.getX(dir), Vector.getY(dir));
+			} else {
+				if (myAction == null) {
+					int dir = myBfsSolver.nextStep();
+					int newLoc = Vector.add(myLoc, dir);
+					if (dir == Vector.INVALID || !isOccupiable(newLoc) || chargingStatusChanged) {
+						myBfsSolver.solve(myLoc, SPECS.UNITS[me.unit].SPEED, SPECS.UNITS[me.unit].SPEED,
+							(location) -> { return circleLocs.contains(location); },
+							(location) -> { return isOccupiable(location); }
+						);
+						dir = myBfsSolver.nextStep();
+						newLoc = Vector.add(myLoc, dir);
+					}
+					if (dir != Vector.INVALID && isOccupiable(newLoc)) {
+						myAction = move(Vector.getX(dir), Vector.getY(dir));
+					}
 				}
-			}
+			}	
 
 			return myAction;
 		}
@@ -2071,6 +2096,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						Integer loc = Vector.makeMapLocationFromCompressed(what & 0x0fff);
 						if (loc != Vector.INVALID) {
 							circleLocs.remove(loc);
+							amChargingRobot = false;
+							myInitialHealth = me.health;
 						}
 					}
 				}
@@ -2083,6 +2110,8 @@ public strictfp class MyRobot extends BCAbstractRobot {
 						communications.sendRadio(Vector.compress(loc) | Communicator.CIRCLE_SUCCESS,
 							getBroadcastUniverseRadiusSquared());
 						circleLocs.remove(loc);
+						amChargingRobot = false;
+						myInitialHealth = me.health;
 						break;
 					}
 				}
@@ -2093,10 +2122,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			double rad = totalSqueezeRadius + finalRadius - Math.log(1 + squeezeConst * clock / invInitSqueezeRate) / squeezeConst;
 			rad = Math.max(rad, finalRadius);
 			if (clock > numSqueezeRounds) rad = finalRadius;
-
-			if (me.unit == SPECS.PREACHER || me.unit == SPECS.CRUSADER) {
-				rad -= 4.0; // Untested
-			}
 			
 			return rad;
 		}
@@ -2134,6 +2159,28 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		private boolean isPrettyGoodCircleLocation(int loc) {
 			if ((loc != myLoc && !isOccupiable(loc)) || Vector.get(loc, visibleRobotMap) == -1) return false;
 			return sminDistance(loc) <= minSminDist + CIRCLE_EPSILON;
+		}
+
+		private void checkToBecomeChargingRobot() {
+			boolean newChargingStatus = false;
+			if (me.unit != SPECS.PROPHET) {
+				if (me.health != myInitialHealth) {
+					newChargingStatus = true;
+				} else {
+					for (Robot r : visibleRobots) {
+						if (isVisible(r) && r.team != me.team && isArmed(r.unit)) {
+							newChargingStatus = true;
+							return;
+						}
+					}
+				}
+			}
+			if (newChargingStatus != amChargingRobot) {
+				amChargingRobot = newChargingStatus;
+				chargingStatusChanged = true;
+			} else {
+				chargingStatusChanged = false;
+			}
 		}
 	}
 }
