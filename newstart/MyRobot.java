@@ -644,7 +644,6 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		protected static final int CIRCLE_COOLDOWN = 5;
 		protected final double CIRCLE_BUILD_REDUCTION_BASE;
 		protected final double CIRCLE_BUILD_REDUCTION_MEDIAN;
-		protected static final int SHORTRANGE_OFFSET_CONSTANT = 4;
 
 		protected boolean circleInitiated;
 		protected int lastCircleTurn;
@@ -819,20 +818,25 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return null;
 		}
 
-		protected double calculateTurtlePenalty(int location, int unit, int mySide) {
+		protected int unitDistanceOffset(int unit) {
 			if (unit != SPECS.PROPHET) {
-				if (symmetryStatus == BoardSymmetryType.HORIZONTAL) {
-					if (Vector.getY(mySide) < boardSize/2) {
-						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)+SHORTRANGE_OFFSET_CONSTANT);
-					} else {
-						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)-SHORTRANGE_OFFSET_CONSTANT);
-					}
-				} else if (symmetryStatus == BoardSymmetryType.VERTICAL) {
-					if (Vector.getX(mySide) < boardSize/2) {
-						location = Vector.makeMapLocation(Vector.getX(location)+SHORTRANGE_OFFSET_CONSTANT, Vector.getY(location));
-					} else {
-						location = Vector.makeMapLocation(Vector.getX(location)-SHORTRANGE_OFFSET_CONSTANT, Vector.getY(location));
-					}
+				return 2;
+			}
+			return -2;
+		}
+
+		protected double calculateTurtlePenalty(int location, int unit, int mySide) {
+			if (symmetryStatus == BoardSymmetryType.HORIZONTAL) {
+				if (Vector.getY(mySide) < boardSize/2) {
+					location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)+unitDistanceOffset(unit));
+				} else {
+					location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)-unitDistanceOffset(unit));
+				}
+			} else if (symmetryStatus == BoardSymmetryType.VERTICAL) {
+				if (Vector.getX(mySide) < boardSize/2) {
+					location = Vector.makeMapLocation(Vector.getX(location)+unitDistanceOffset(unit), Vector.getY(location));
+				} else {
+					location = Vector.makeMapLocation(Vector.getX(location)-unitDistanceOffset(unit), Vector.getY(location));
 				}
 			}
 
