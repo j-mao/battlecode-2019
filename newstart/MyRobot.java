@@ -750,6 +750,9 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected boolean turtleWillIsolateMeForever(int location) {
+			if (!Vector.isAdjacent(myLoc, location)) {
+				return false;
+			}
 			int claustrophobia = 0;
 			for (int dir: dirs) {
 				int loc = Vector.add(myLoc, dir);
@@ -763,7 +766,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return claustrophobia == 8;
 		}
 
-		protected BuildAction tryToCreateTurtleUnit(int unit) {
+		protected BuildAction tryToCreateTurtleUnit(int unit, int mySide) {
 			if (!canAffordToBuild(unit, false)) {
 				return null;
 			}
@@ -778,7 +781,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (turtleLoc != Vector.INVALID) {
 					popped.add(turtleLoc);
 				}
-				turtleLoc = pollBestTurtleLocation(unit);
+				turtleLoc = pollBestTurtleLocation(unit, mySide);
 			}
 
 			for (Integer reinsert: popped) {
@@ -798,16 +801,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return null;
 		}
 
-		protected double calculateTurtlePenalty(int location, int unit) {
+		protected double calculateTurtlePenalty(int location, int unit, int mySide) {
 			if (unit != SPECS.PROPHET) {
 				if (symmetryStatus == BoardSymmetryType.HORIZONTAL) {
-					if (Vector.getY(myLoc) < boardSize/2) {
+					if (Vector.getY(mySide) < boardSize/2) {
 						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)+SHORTRANGE_OFFSET_CONSTANT);
 					} else {
 						location = Vector.makeMapLocation(Vector.getX(location), Vector.getY(location)-SHORTRANGE_OFFSET_CONSTANT);
 					}
 				} else if (symmetryStatus == BoardSymmetryType.VERTICAL) {
-					if (Vector.getX(myLoc) < boardSize/2) {
+					if (Vector.getX(mySide) < boardSize/2) {
 						location = Vector.makeMapLocation(Vector.getX(location)+SHORTRANGE_OFFSET_CONSTANT, Vector.getY(location));
 					} else {
 						location = Vector.makeMapLocation(Vector.getX(location)-SHORTRANGE_OFFSET_CONSTANT, Vector.getY(location));
@@ -831,14 +834,14 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			return result;
 		}
 
-		protected int pollBestTurtleLocation(int unit) {
+		protected int pollBestTurtleLocation(int unit, int mySide) {
 			if (availableTurtles.isEmpty()) {
 				return Vector.INVALID;
 			}
 			int bestIdx = 0;
-			double bestPenalty = calculateTurtlePenalty(availableTurtles.get(0), unit);
+			double bestPenalty = calculateTurtlePenalty(availableTurtles.get(0), unit, mySide);
 			for (int i = 1; i < availableTurtles.size(); i++) {
-				double alt = calculateTurtlePenalty(availableTurtles.get(i), unit);
+				double alt = calculateTurtlePenalty(availableTurtles.get(i), unit, mySide);
 				if (alt < bestPenalty) {
 					bestIdx = i;
 					bestPenalty = alt;
@@ -1106,7 +1109,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD) {
-				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
+				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER, myLoc);
 			}
 
 			if (myAction == null) {
@@ -1121,7 +1124,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (myAction == null) {
 				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
 				if (shouldBuildTurtlingUnit(what)) {
-					myAction = tryToCreateTurtleUnit(what);
+					myAction = tryToCreateTurtleUnit(what, myLoc);
 				}
 			}
 
@@ -1611,13 +1614,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			}
 
 			if (myAction == null && me.turn >= SPAM_CRUSADER_TURN_THRESHOLD && canAffordToBuild(SPECS.CRUSADER, false)) {
-				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER);
+				myAction = tryToCreateTurtleUnit(SPECS.CRUSADER, myCastle);
 			}
 
 			if (myAction == null) {
 				int what = (Math.random() < 0.6) ? SPECS.PROPHET : (Math.random() < 0.5) ? SPECS.CRUSADER : SPECS.PREACHER;
 				if (shouldBuildTurtlingUnit(what)) {
-					myAction = tryToCreateTurtleUnit(what);
+					myAction = tryToCreateTurtleUnit(what, myCastle);
 				}
 			}
 
