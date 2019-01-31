@@ -151,12 +151,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		static final int SHED_RADIUS = 0x4000;
 		static final int CIRCLE_SUCCESS = 0x5000;
 		static final int DISTRESS = 0x6000;
+		static final int SPEAR = 0x7000;
 		static final int CASTLELOC = 0x8000;
 
 		// Bitmasks for castle communications
 		static final int STRUCTURE = 0x00;
 		static final int PILGRIM = 0x40;
 		static final int ARMED = 0x80;
+
+		// Special turncount used for church spear
+		static final int SPEAR_CHURCH = 0;
 
 		/** No message was received */
 		static final int NO_MESSAGE = -1;
@@ -188,6 +192,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				if (isVisible(r) && isFriendlyStructure(r) && isRadioing(r) && r.signal_radius == 2) {
 					int msg = readRadio(r);
 					if ((msg & 0xf000) == (ASSIGN & 0xf000)) {
+						return Vector.makeMapLocationFromCompressed(msg & 0x0fff);
+					}
+				}
+			}
+			return Vector.INVALID;
+		}
+
+		final int readSpearLoc() {
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && isFriendlyStructure(r) && isRadioing(r) && r.signal_radius == 2) {
+					int msg = readRadio(r);
+					if ((msg & 0xf000) == (SPEAR & 0xf000)) {
 						return Vector.makeMapLocationFromCompressed(msg & 0x0fff);
 					}
 				}
@@ -386,10 +402,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 
 		protected boolean canAffordToBuild(int unit, boolean urgent) {
-			int reqFuel = SPECS.UNITS[unit].CONSTRUCTION_FUEL;
-			if (unit != SPECS.CHURCH) {
-				reqFuel += 2; // location assignment cost
-			}
+			int reqFuel = SPECS.UNITS[unit].CONSTRUCTION_FUEL + 2;
 			if (urgent) {
 				return fuel >= reqFuel && karbonite >= SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			}
@@ -403,14 +416,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			if (builderTurn < 100) {
 				return 60;
 			}
-			if (builderTurn < 200) {
+			if (builderTurn < 150) {
 				return 100;
 			}
-			if (builderTurn < 600) {
-				return builderTurn - 100;
-			}
 			if (builderTurn < SPAM_CRUSADER_TURN_THRESHOLD) {
-				return 500;
+				return 600;
 			}
 			return 0;
 		}
@@ -907,6 +917,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int amCanBuild = (karbonite-karboniteReserve())/SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			amCanBuild = Math.min(amCanBuild, (fuel-fuelReserve())/SPECS.UNITS[unit].CONSTRUCTION_FUEL);
 			prob *= (double)amCanBuild;
+
+			if (me.unit == SPECS.CASTLE) {
+				prob *= 4; prob /= 3;
+			} else {
+				prob *= 2; prob /= 3;
+			}
 			// Decrease with recent circle attacks
 			prob /= (1 + Math.pow(CIRCLE_BUILD_REDUCTION_BASE, CIRCLE_BUILD_REDUCTION_MEDIAN - (me.turn - lastCircleTurn)));
 			if (prob > Math.random()) { // Using Math.random() because it gives between 0 and 1
@@ -1067,6 +1083,17 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		}
 	}
 
+	private abstract class SpearRobotController extends SpecificRobotController {
+
+		protected int myTarget;
+
+		SpearRobotController(int assignedTarget) {
+			super();
+
+			myTarget = assignedTarget;
+		}
+	}
+
 	private class CastleController extends StructureController {
 
 		/**
@@ -1174,9 +1201,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				myAction = tryToAttack();
-				if (myAction != null && me.turn > lastDistress+TIME_BETWEEN_DISTRESSES) {
-					if (sendDistressIfRequired()) {
-						lastDistress = me.turn;
+			}
+
+			if ((myAction == null || myAction instanceof AttackAction) && me.turn > lastDistress+TIME_BETWEEN_DISTRESSES) {
+				if (sendDistressIfRequired()) {
+					lastDistress = me.turn;
+					if (myAction == null) {
+						myAction = new NullAction();
 					}
 				}
 			}
@@ -1642,6 +1673,11 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		@Override
 		Action runSpecificTurn() {
 
+			if (builderTurn == Communicator.SPEAR_CHURCH) {
+				mySpecificRobotController = new SpearChurchController(myCastle);
+				return mySpecificRobotController.runSpecificTurn();
+			}
+
 			sendStructureLocation();
 			checkTurtleWelfare();
 
@@ -1713,6 +1749,10 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 	private class PilgrimController extends MobileRobotController {
 
+		private static final int TIME_BETWEEN_SPEARS = 30;
+		private final int spearLoc;
+		private int lastSpear;
+
 		private int assignedLoc;
 		private int farmHalfQty;
 		private boolean farmHalf;
@@ -1722,31 +1762,43 @@ public strictfp class MyRobot extends BCAbstractRobot {
 		PilgrimController() {
 			super();
 
-			assignedLoc = communications.readFarmHalfLoc();
+			assignedLoc = communications.readSpearLoc();
 			if (assignedLoc != Vector.INVALID) {
-				farmHalfQty = 2;
-				farmHalf = true;
+				spearLoc = assignedLoc;
 			} else {
-				assignedLoc = communications.readAssignedLoc();
-				farmHalfQty = 0;
-				farmHalf = false;
-			}
+				spearLoc = Vector.INVALID;
 
-			churchLoc = ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, assignedLoc, myHome);
-			churchBuilt = false;
+				assignedLoc = communications.readFarmHalfLoc();
+				if (assignedLoc != Vector.INVALID) {
+					farmHalfQty = 2;
+					farmHalf = true;
+				} else {
+					assignedLoc = communications.readAssignedLoc();
+					farmHalfQty = 0;
+					farmHalf = false;
+				}
 
-			if (Vector.distanceSquared(churchLoc, myHome) <= 25) {
-				churchLoc = myHome;
-				churchBuilt = true;
-			}
+				churchLoc = ResourceClusterSolver.determineCentroid(map, karboniteMap, fuelMap, assignedLoc, myHome);
+				churchBuilt = false;
 
-			for (Robot r: visibleRobots) {
-				builderTurn = Math.max(builderTurn, r.turn);
+				if (Vector.distanceSquared(churchLoc, myHome) <= 25) {
+					churchLoc = myHome;
+					churchBuilt = true;
+				}
+
+				for (Robot r: visibleRobots) {
+					builderTurn = Math.max(builderTurn, r.turn);
+				}
 			}
 		}
 
 		@Override
 		Action runSpecificTurn() {
+
+			if (spearLoc != Vector.INVALID) {
+				mySpecificRobotController = new SpearPilgrimController(spearLoc);
+				return mySpecificRobotController.runSpecificTurn();
+			}
 
 			sendMyAssignedLoc();
 			boolean wantChurch = false;
@@ -1840,6 +1892,16 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 
+			if (myAction == null &&
+				Vector.get(assignedLoc, mayBecomeAttacked) == me.turn &&
+				me.turn > lastSpear+TIME_BETWEEN_SPEARS) {
+
+				myAction = checkToCommenceChurchSpear();
+				if (myAction != null) {
+					lastSpear = me.turn;
+				}
+			}
+
 			// If you're doing nothing (e.g. assigned square is dangerous) you may as well mine
 			if (myAction == null) {
 				if (Vector.get(myLoc, karboniteMap) && me.karbonite < karboniteLimit()) {
@@ -1892,6 +1954,18 @@ public strictfp class MyRobot extends BCAbstractRobot {
 				}
 			}
 			return null; // Guess I'll just die?
+		}
+
+		private BuildAction checkToCommenceChurchSpear() {
+			if (karbonite < 500 || fuel < 2500) {
+				return null;
+			}
+			int dir = selectDirectionTowardsLocation(assignedLoc);
+			if (dir != Vector.INVALID) {
+				communications.sendCastleLocDatapack(assignedLoc, Communicator.SPEAR_CHURCH);
+				return buildUnit(SPECS.CHURCH, Vector.getX(dir), Vector.getY(dir));
+			}
+			return null;
 		}
 	}
 
@@ -2252,6 +2326,80 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			} else {
 				chargingStatusChanged = false;
 			}
+		}
+	}
+
+	private class SpearChurchController extends SpearRobotController {
+
+		int pilgrimBuildDir;
+
+		SpearChurchController(int assignment) {
+			super(assignment);
+
+			myBfsSolver.solve(myLoc, 2, 2,
+				(location) -> { return location == myTarget; },
+				(location) -> { return Vector.get(location, map); });
+			pilgrimBuildDir = myBfsSolver.nextStep();
+
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.team != me.team && Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 13) {
+					pilgrimBuildDir = Vector.INVALID;
+				}
+			}
+		}
+
+		@Override
+		Action runSpecificTurn() {
+
+			// Technically you're not a real church
+			// So don't send a structure location
+
+			Action myAction = null;
+
+			if (myAction == null && isOccupiable(Vector.add(myLoc, pilgrimBuildDir)) && canAffordToBuild(SPECS.PILGRIM, true)) {
+				myAction = buildUnit(SPECS.PILGRIM, Vector.getX(pilgrimBuildDir), Vector.getY(pilgrimBuildDir));
+				communications.sendRadio(Vector.compress(myTarget) | Communicator.SPEAR, 2);
+			}
+
+			if (myAction == null &&
+				Vector.get(myTarget, mayBecomeAttacked) == me.turn &&
+				canAffordToBuild(SPECS.PREACHER, true)) {
+
+				int dir = selectDirectionTowardsLocation(myTarget);
+				if (dir != Vector.INVALID) {
+					myAction = buildUnit(SPECS.PREACHER, Vector.getX(dir), Vector.getY(dir));
+					communications.sendRadio(Vector.compress(myTarget) | Communicator.ASSIGN, 2);
+				}
+			}
+
+			return myAction;
+		}
+	}
+
+	private class SpearPilgrimController extends SpearRobotController {
+
+		int churchBuildDir;
+
+		SpearPilgrimController(int assignment) {
+			super(assignment);
+
+			myBfsSolver.solve(myLoc, 2, 2,
+				(location) -> { return location == myTarget; },
+				(location) -> { return Vector.get(location, map); });
+			churchBuildDir = myBfsSolver.nextStep();
+		}
+
+		@Override
+		Action runSpecificTurn() {
+
+			Action myAction = null;
+
+			if (myAction == null && isOccupiable(Vector.add(myLoc, churchBuildDir)) && canAffordToBuild(SPECS.CHURCH, true)) {
+				myAction = buildUnit(SPECS.CHURCH, Vector.getX(churchBuildDir), Vector.getY(churchBuildDir));
+				communications.sendCastleLocDatapack(myTarget, Communicator.SPEAR_CHURCH);
+			}
+
+			return myAction;
 		}
 	}
 }
