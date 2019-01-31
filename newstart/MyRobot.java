@@ -1195,9 +1195,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			if (myAction == null) {
 				myAction = tryToAttack();
-				if (myAction != null && me.turn > lastDistress+TIME_BETWEEN_DISTRESSES) {
-					if (sendDistressIfRequired()) {
-						lastDistress = me.turn;
+			}
+
+			if ((myAction == null || myAction instanceof AttackAction) && me.turn > lastDistress+TIME_BETWEEN_DISTRESSES) {
+				if (sendDistressIfRequired()) {
+					lastDistress = me.turn;
+					if (myAction == null) {
+						myAction = new NullAction();
 					}
 				}
 			}
