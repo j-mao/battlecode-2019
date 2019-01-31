@@ -2332,11 +2332,13 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			myBfsSolver.solve(myLoc, 2, 2,
 				(location) -> { return location == myTarget; },
-				(location) -> { return isOccupiable(location); });
+				(location) -> { return true; });
 			pilgrimBuildDir = myBfsSolver.nextStep();
 
-			if (Vector.distanceSquared(myLoc, myTarget) <= 16) {
-				pilgrimBuildDir = Vector.INVALID;
+			for (Robot r: visibleRobots) {
+				if (isVisible(r) && r.team != me.team && Vector.distanceSquared(myLoc, Vector.makeMapLocation(r.x, r.y)) <= 13) {
+					pilgrimBuildDir = Vector.INVALID;
+				}
 			}
 		}
 
@@ -2377,7 +2379,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			myBfsSolver.solve(myLoc, 2, 2,
 				(location) -> { return location == myTarget; },
-				(location) -> { return isOccupiable(location); });
+				(location) -> { return true; });
 			churchBuildDir = myBfsSolver.nextStep();
 		}
 
