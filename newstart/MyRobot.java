@@ -2338,7 +2338,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			myBfsSolver.solve(myLoc, 2, 2,
 				(location) -> { return location == myTarget; },
-				(location) -> { return true; });
+				(location) -> { return Vector.get(location, map); });
 			pilgrimBuildDir = myBfsSolver.nextStep();
 
 			for (Robot r: visibleRobots) {
@@ -2385,7 +2385,7 @@ public strictfp class MyRobot extends BCAbstractRobot {
 
 			myBfsSolver.solve(myLoc, 2, 2,
 				(location) -> { return location == myTarget; },
-				(location) -> { return true; });
+				(location) -> { return Vector.get(location, map); });
 			churchBuildDir = myBfsSolver.nextStep();
 		}
 
