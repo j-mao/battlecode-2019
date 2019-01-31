@@ -917,6 +917,12 @@ public strictfp class MyRobot extends BCAbstractRobot {
 			int amCanBuild = (karbonite-karboniteReserve())/SPECS.UNITS[unit].CONSTRUCTION_KARBONITE;
 			amCanBuild = Math.min(amCanBuild, (fuel-fuelReserve())/SPECS.UNITS[unit].CONSTRUCTION_FUEL);
 			prob *= (double)amCanBuild;
+
+			if (me.unit == SPECS.CASTLE) {
+				prob *= 4; prob /= 3;
+			} else {
+				prob *= 2; prob /= 3;
+			}
 			// Decrease with recent circle attacks
 			prob /= (1 + Math.pow(CIRCLE_BUILD_REDUCTION_BASE, CIRCLE_BUILD_REDUCTION_MEDIAN - (me.turn - lastCircleTurn)));
 			if (prob > Math.random()) { // Using Math.random() because it gives between 0 and 1
